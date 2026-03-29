@@ -16,14 +16,15 @@ def main():
     conn = database.init_database()
 
     api = BolsiApi(conn=conn)
-    url = (
-        config.dev_server_url
-        if config.frontend_dist_dir is None
-        else config.frontend_dist_dir.as_uri()
-    )
-    if config.frontend_dist_dir is None:
-        logger.warning("Frontend distribution directory not found!")
-        logger.warning("Using dev server URL: %s", url)
+
+    if config.development_mode:
+        url = config.dev_server_url
+        logger.info("Dev mode - using dev server URL: %s", url)
+    elif config.frontend_dist_dir.exists():
+        url = config.frontend_dist_dir.as_uri()
+    else:
+        logger.warning("Frontend dist not found, falling back to dev server")
+        url = config.dev_server_url
 
     logger.info("Starting window %dx%d", config.window_width, config.window_height)
     webview.create_window(
@@ -32,8 +33,9 @@ def main():
         width=config.window_width,
         height=config.window_height,
         js_api=api,
-        confirm_close=True,
+        confirm_close=False,
         text_select=True,
+        maximized=True,
         zoomable=True,
     )
     webview.start(debug=True)
