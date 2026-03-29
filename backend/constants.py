@@ -16,7 +16,7 @@ class Config:
     logs_dir: Path
     frontend_dist_dir: Path
     logs_default_name: str = "bolsi"
-    dev_server_url: str = "http://127.0.0.1:5173"
+    dev_server_url: str = "http://localhost:5173"
     development_mode: bool = True
     app_name: str = "Bolsi"
     app_version: str = "0.0.1"
