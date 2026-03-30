@@ -46,33 +46,13 @@ class BolsiApi:
     ) -> JsonDict:
         return self.users.register(username, email, password, device_info=device_info)
 
-    def login(self, username: str, password: str) -> JsonDict:
-        return self.users.login(username, password)
-
-    def logout(self, access_token: Optional[str] = None) -> JsonDict:
-        return self.users.logout(access_token)
-
-    def get_current_user(self, access_token: Optional[str] = None) -> JsonDict:
-        return self.users.get_current_user(access_token)
-
     # ── Users domain ──────────────────────────────────────────────────────
-
-    def user_register(
-        self,
-        username: str,
-        email: str,
-        password: str,
-    ) -> JsonDict:
-        return self.users.register(username, email, password)
 
     def user_login(self, username: str, password: str) -> JsonDict:
         return self.users.login(username, password)
 
     def user_logout(self, access_token: Optional[str] = None) -> JsonDict:
         return self.users.logout(access_token)
-
-    def user_me(self, access_token: Optional[str] = None) -> JsonDict:
-        return self.users.get_current_user(access_token)
 
     def user_current_session(self, device_info: Optional[str] = None) -> JsonDict:
         return self.users.current_session(device_info=device_info)
