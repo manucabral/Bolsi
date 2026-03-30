@@ -1,5 +1,11 @@
 """Main entry point for the Bolsi application."""
 
+import socket
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
 import webview
 
 from backend.logger import logger, set_log_level
@@ -8,9 +14,24 @@ from backend.api import BolsiApi
 from backend import database
 
 
+def find_free_port() -> int:
+    """Find an available localhost TCP port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_obj:
+        socket_obj.bind(("127.0.0.1", 0))
+        return int(socket_obj.getsockname()[1])
+
+
+def serve_dist(directory: Path, port: int) -> None:
+    """Serve frontend dist files over a local HTTP server."""
+    handler_class = partial(SimpleHTTPRequestHandler, directory=str(directory))
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler_class)
+    logger.info("Serving frontend dist at http://127.0.0.1:%d", port)
+    httpd.serve_forever()
+
+
 def main():
     """Initialize and start Bolsi app."""
-    set_log_level("DEBUG")
+    set_log_level("DEBUG" if config.development_mode else "INFO")
 
     logger.info("Initializing database...")
     conn = database.init_database()
@@ -21,7 +42,14 @@ def main():
         url = config.dev_server_url
         logger.info("Dev mode - using dev server URL: %s", url)
     elif config.frontend_dist_dir.exists():
-        url = config.frontend_dist_dir.as_uri()
+        port = find_free_port()
+        static_thread = threading.Thread(
+            target=serve_dist,
+            args=(config.frontend_dist_dir, port),
+            daemon=True,
+        )
+        static_thread.start()
+        url = f"http://127.0.0.1:{port}/index.html"
     else:
         logger.warning("Frontend dist not found, falling back to dev server")
         url = config.dev_server_url
@@ -38,7 +66,7 @@ def main():
         maximized=True,
         zoomable=True,
     )
-    webview.start(debug=True)
+    webview.start(debug=config.development_mode)
 
 
 if __name__ == "__main__":
