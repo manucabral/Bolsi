@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.db
 exports/
+dist_build/
 
 # C extensions
 *.so
