@@ -3,10 +3,10 @@ Constants and configuration for the application.
 """
 
 import os
+import sys
 from pathlib import Path
 from dataclasses import dataclass
 
-# 5 days expressed in seconds.
 SESSION_DURATION_SECONDS = 5 * 24 * 60 * 60
 
 EXPORT_ALLOWED_FORMATS = frozenset({"csv", "pdf"})
@@ -26,7 +26,6 @@ EXPORT_SECTION_LABELS = {
     "categories": "Categorias",
     "notes": "Notas",
 }
-EXPORT_LOCAL_ONLY_IN_DEVELOPMENT = True
 
 
 @dataclass
@@ -50,7 +49,6 @@ class Config:
     app_version: str = "0.0.1"
     window_width: int = 1000
     window_height: int = 700
-    export_local_only_in_development: bool = EXPORT_LOCAL_ONLY_IN_DEVELOPMENT
 
     @property
     def db_path(self) -> Path:
@@ -83,6 +81,8 @@ def _get_data_dir() -> Path:
 
 def _get_project_root() -> Path:
     """Get project root directory."""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS"))
     return Path(__file__).parent.parent
 
 
@@ -102,7 +102,7 @@ def _get_dev_logs_dir() -> Path:
 
 def _get_frontend_dist_dir() -> Path:
     """Get the frontend distribution directory."""
-    return Path(__file__).parent.parent / "frontend" / "dist"
+    return _get_project_root() / "frontend" / "dist"
 
 
 def _get_prod_exports_dir() -> Path:
@@ -144,10 +144,10 @@ def _get_dev_db_path() -> Path:
 
 
 def _is_development_mode() -> bool:
-    """Read development mode from env var, defaulting to True."""
+    """Read development mode from env var, defaulting to False."""
     raw = os.getenv("BOLSI_DEVELOPMENT_MODE")
     if raw is None:
-        return True
+        return False
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
