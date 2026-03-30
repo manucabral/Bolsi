@@ -65,13 +65,6 @@ class ExportsApi(DomainApi):
         export_dir.mkdir(parents=True, exist_ok=True)
         return export_dir
 
-    def _assert_local_export_enabled(self) -> JsonDict | None:
-        if config.export_local_only_in_development and not config.development_mode:
-            return self._error(
-                "La exportación local está habilitada solo en development mode"
-            )
-        return None
-
     def _decode_png_data_url(self, image_data_url: str) -> bytes:
         if not isinstance(image_data_url, str) or len(image_data_url.strip()) == 0:
             raise ValueError("No se recibió una imagen válida para exportar")
@@ -689,10 +682,6 @@ class ExportsApi(DomainApi):
         if user_error:
             return user_error
 
-        export_env_error = self._assert_local_export_enabled()
-        if export_env_error:
-            return export_env_error
-
         try:
             image_bytes = self._decode_png_data_url(image_data_url)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -737,10 +726,6 @@ class ExportsApi(DomainApi):
         user_error = self._validate_user(user_id)
         if user_error:
             return user_error
-
-        export_env_error = self._assert_local_export_enabled()
-        if export_env_error:
-            return export_env_error
 
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -793,10 +778,6 @@ class ExportsApi(DomainApi):
         user_error = self._validate_user(user_id)
         if user_error:
             return user_error
-
-        export_env_error = self._assert_local_export_enabled()
-        if export_env_error:
-            return export_env_error
 
         normalized_section = self._normalize_section(section)
         normalized_format = self._normalize_format(export_format)
