@@ -7,7 +7,6 @@ export function getBolsiApi(): Promise<PyApi> {
       return;
     }
     window.addEventListener(
-      // fallback
       "pywebviewready",
       () => resolve(window.pywebview!.api),
       { once: true },
