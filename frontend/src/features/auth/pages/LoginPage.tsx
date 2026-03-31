@@ -10,6 +10,7 @@ export function LoginPage() {
   const { refreshSession } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(
     null,
   );
@@ -45,7 +46,7 @@ export function LoginPage() {
     <main class="mx-auto flex min-h-screen w-full max-w-[1060px] items-center justify-center px-4 py-6">
       <Panel
         title="Ingresar"
-        subtitle="Ingresa con tus credenciales — totalmente open-source y seguro"
+        subtitle="Tus datos se guardan solo en tu PC."
         showVersionInHeader={false}
       >
         <form onSubmit={handleSubmit} class="space-y-4">
@@ -67,14 +68,51 @@ export function LoginPage() {
             <label class="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-violet-300/90">
               Contrasena
             </label>
-            <input
-              type="password"
-              value={password}
-              onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
-              placeholder="********"
-              required
-              class="w-full rounded-[0.85rem] border border-violet-300/35 bg-violet-950/65 px-3.5 py-2.5 text-violet-100 outline-none transition placeholder:text-violet-300/45 focus:border-fuchsia-300/90 focus:bg-violet-950/85 focus:shadow-[0_0_0_3px_rgba(141,109,255,0.3)]"
-            />
+            <div class="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
+                placeholder="********"
+                required
+                class="w-full rounded-[0.85rem] border border-violet-300/35 bg-violet-950/65 px-3.5 py-2.5 pr-11 text-violet-100 outline-none transition placeholder:text-violet-300/45 focus:border-fuchsia-300/90 focus:bg-violet-950/85 focus:shadow-[0_0_0_3px_rgba(141,109,255,0.3)]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((previous) => !previous)}
+                class="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md border border-violet-300/25 bg-black/25 p-1.5 text-violet-200 transition hover:border-violet-300/45 hover:text-violet-100"
+                title={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+                aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+              >
+                {showPassword ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    class="h-4 w-4"
+                  >
+                    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-5 0-9-4-10-8a11.77 11.77 0 0 1 5.09-6.09" />
+                    <path d="M1 1l22 22" />
+                    <path d="M9.9 4.24A10.93 10.93 0 0 1 12 4c5 0 9 4 10 8a11.8 11.8 0 0 1-1.67 3.25" />
+                    <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    class="h-4 w-4"
+                  >
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
 
           <button

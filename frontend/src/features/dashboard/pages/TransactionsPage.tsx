@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
+import { Link } from "react-router-dom";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useAuth } from "../../../platform/auth/AuthProvider";
 import { listCategories } from "../../../platform/pywebview/categories.api";
@@ -18,7 +19,6 @@ import type {
   BackendTransactionType,
   TransactionItem,
 } from "../../../platform/pywebview/transactions.api.types";
-import { SectionExportActions } from "../components/SectionExportActions";
 import { useKindNoticeToast } from "../../../shared/ui/useToastNotice";
 
 type NormalizedCategoryType = "income" | "expense" | null;
@@ -103,6 +103,20 @@ function normalizeCategoryType(value: unknown): NormalizedCategoryType {
   if (normalized === "income" || normalized === "ingreso") return "income";
 
   return null;
+}
+
+function normalizeCategoryLabelForGrouping(value: string) {
+  const trimmed = value.trim();
+  const normalized = trimmed
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (!normalized || normalized === "sin categoria") {
+    return "sin categoria";
+  }
+
+  return normalized;
 }
 
 function mapTransaction(item: TransactionItem): UiTransaction {
@@ -289,9 +303,19 @@ export function TransactionsPage() {
       groupedByDate.set(transaction.date, current);
     }
 
+    const selectedYear = Number(yearFilter);
+    const selectedMonth = Number(monthFilter);
+    if (!Number.isFinite(selectedYear) || !Number.isFinite(selectedMonth)) {
+      return [];
+    }
+
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
     let runningBalance = 0;
 
-    return Array.from(groupedByDate.entries()).map(([time, values]) => {
+    return Array.from({ length: daysInMonth }, (_, index) => {
+      const day = String(index + 1).padStart(2, "0");
+      const time = `${yearFilter}-${monthFilter}-${day}`;
+      const values = groupedByDate.get(time) ?? { income: 0, expense: 0 };
       runningBalance += values.income - values.expense;
 
       return {
@@ -301,7 +325,7 @@ export function TransactionsPage() {
         balance: runningBalance,
       };
     });
-  }, [filteredTransactions]);
+  }, [filteredTransactions, yearFilter, monthFilter]);
 
   const transactionCategoryDistribution = useMemo(() => {
     const grouped = new Map<
@@ -310,9 +334,14 @@ export function TransactionsPage() {
     >();
 
     for (const transaction of filteredTransactions) {
-      const key = `${transaction.type}::${transaction.categoryName}`;
+      const normalizedLabel = normalizeCategoryLabelForGrouping(transaction.categoryName);
+      const displayLabel =
+        normalizedLabel === "sin categoria"
+          ? "Sin categoría"
+          : transaction.categoryName;
+      const key = `${transaction.type}::${normalizedLabel}`;
       const current = grouped.get(key) ?? {
-        label: transaction.categoryName,
+        label: displayLabel,
         type: transaction.type,
         amount: 0,
       };
@@ -338,6 +367,9 @@ export function TransactionsPage() {
     () => MONTHS.find((month) => month.value === monthFilter)?.label ?? monthFilter,
     [monthFilter],
   );
+
+  const showTrendHint =
+    transactionTrendSeries.length > 0 && transactionTrendSeries.length < 3;
 
   const filteredInstallmentsCount = useMemo(
     () => filteredTransactions.filter((transaction) => transaction.fromInstallment).length,
@@ -653,25 +685,24 @@ export function TransactionsPage() {
 
   return (
     <DashboardLayout
-      sectionTag="Finanzas"
       title="Transacciones"
       subtitle="Registra y filtra tus movimientos."
     >
       <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <article class="rounded-2xl border border-emerald-300/25 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
+        <article class="rounded-2xl border border-teal-300/25 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
           <p class="text-[11px] uppercase tracking-[0.08em] text-violet-300/90">
             Ingresos ({selectedMonthLabel})
           </p>
-          <p class="mt-1 text-xl font-semibold text-emerald-300">
+          <p class="mt-1 text-xl font-semibold text-teal-300">
             {money.format(totals.income)}
           </p>
         </article>
 
-        <article class="rounded-2xl border border-rose-300/25 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
+        <article class="rounded-2xl border border-red-300/25 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
           <p class="text-[11px] uppercase tracking-[0.08em] text-violet-300/90">
             Gastos ({selectedMonthLabel})
           </p>
-          <p class="mt-1 text-xl font-semibold text-rose-300">
+          <p class="mt-1 text-xl font-semibold text-red-300">
             {money.format(totals.expense)}
           </p>
         </article>
@@ -683,7 +714,7 @@ export function TransactionsPage() {
           <p
             class={[
               "mt-1 text-xl font-semibold",
-              totals.balance < 0 ? "text-rose-300" : "text-emerald-300",
+              totals.balance < 0 ? "text-red-300" : "text-teal-300",
             ].join(" ")}
           >
             {money.format(totals.balance)}
@@ -692,7 +723,7 @@ export function TransactionsPage() {
 
         <article class="rounded-2xl border border-violet-300/25 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
           <p class="text-[11px] uppercase tracking-[0.08em] text-violet-300/90">
-            Movimientos filtrados
+            Movimientos
           </p>
           <p class="mt-1 text-xl font-semibold text-violet-100">
             {filteredTransactions.length}
@@ -718,9 +749,16 @@ export function TransactionsPage() {
               No hay movimientos para graficar con los filtros actuales.
             </p>
           ) : (
-            <div class="mt-3">
-              <FinanceTrendChart data={transactionTrendSeries} />
-            </div>
+            <>
+              <div class="mt-3">
+                <FinanceTrendChart data={transactionTrendSeries} />
+              </div>
+              {showTrendHint ? (
+                <p class="mt-2 rounded-lg border border-violet-300/20 bg-violet-950/25 px-3 py-2 text-xs text-violet-200/85">
+                  Agrega mas transacciones para ver la tendencia del mes.
+                </p>
+              ) : null}
+            </>
           )}
         </article>
 
@@ -751,130 +789,105 @@ export function TransactionsPage() {
         </article>
       </section>
 
-      <section class="mt-7 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)]">
-        <aside class="space-y-3">
-          <article class="rounded-2xl border border-violet-300/25 bg-black/35 p-4">
-            <header>
-              <h3 class="text-sm font-semibold text-violet-100">Acciones</h3>
-              <p class="text-xs text-violet-300/85">
-                Crea movimientos y exporta el período actual.
-              </p>
-            </header>
+      <section class="mt-7 space-y-3">
+        <article class="rounded-2xl border border-violet-300/25 bg-black/35 p-4">
+          <div class="flex flex-wrap items-end gap-2 lg:flex-nowrap">
+            <button
+              type="button"
+              onClick={openCreateModal}
+              disabled={!userId || isLoading}
+              class="h-10 shrink-0 rounded-lg border border-violet-300/35 bg-violet-900/50 px-3 text-sm font-semibold text-violet-100 transition hover:bg-violet-800/60 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Nueva transacción
+            </button>
 
-            <div class="mt-3 grid gap-2.5">
-              <button
-                type="button"
-                onClick={openCreateModal}
-                disabled={!userId || isLoading}
-                class="rounded-lg border border-violet-300/35 bg-violet-900/50 px-3 py-2 text-sm font-semibold text-violet-100 transition hover:bg-violet-800/60 disabled:cursor-not-allowed disabled:opacity-50"
+            <label class="w-full sm:w-[240px] lg:min-w-0 lg:flex-1">
+              <span class="sr-only">Buscar</span>
+              <input
+                value={searchTerm}
+                onInput={(event) => setSearchTerm(event.currentTarget.value)}
+                type="search"
+                placeholder="Buscar..."
+                class="h-10 w-full rounded-md border border-violet-300/35 bg-black/35 px-3 text-sm text-violet-100 outline-none transition focus:border-violet-300/75"
+              />
+            </label>
+
+            <label class="shrink-0">
+              <span class="sr-only">Mes</span>
+              <select
+                aria-label="Mes"
+                value={monthFilter}
+                onChange={(event) => setMonthFilter(event.currentTarget.value)}
+                class="h-10 rounded-md border border-violet-300/35 bg-black/35 px-3 text-sm text-violet-100 outline-none"
               >
-                Nueva transacción
-              </button>
+                {MONTHS.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-              <button
-                type="button"
-                onClick={resetFilters}
-                class="rounded-lg border border-violet-300/25 bg-black/25 px-3 py-2 text-sm text-violet-200 transition hover:border-violet-300/45 hover:text-violet-100"
+            <label class="shrink-0">
+              <span class="sr-only">Año</span>
+              <select
+                aria-label="Año"
+                value={yearFilter}
+                onChange={(event) => setYearFilter(event.currentTarget.value)}
+                class="h-10 rounded-md border border-violet-300/35 bg-black/35 px-3 text-sm text-violet-100 outline-none"
               >
-                Limpiar filtros
-              </button>
+                {years.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-              <div class="rounded-lg border border-violet-300/20 bg-violet-950/20 p-2.5">
-                <p class="text-[11px] uppercase tracking-[0.08em] text-violet-300/85">
-                  Exportar movimientos
-                </p>
-                <SectionExportActions
-                  userId={userId}
-                  section="transactions"
-                  disabled={!userId || isLoading || isSaving}
-                  onNotice={setNotice}
-                />
-              </div>
-            </div>
-          </article>
+            <label class="shrink-0">
+              <span class="sr-only">Categoría</span>
+              <select
+                aria-label="Categoría"
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.currentTarget.value)}
+                class="h-10 rounded-md border border-violet-300/35 bg-black/35 px-3 text-sm text-violet-100 outline-none"
+              >
+                <option value="todas">Categoría</option>
+                {categoriesForFilter.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <article class="rounded-2xl border border-violet-300/25 bg-black/35 p-4">
-            <h3 class="text-sm font-semibold text-violet-100">Filtros</h3>
+            <label class="shrink-0">
+              <span class="sr-only">Tipo</span>
+              <select
+                aria-label="Tipo"
+                value={typeFilter}
+                onChange={(event) =>
+                  setTypeFilter(
+                    event.currentTarget.value as "todos" | BackendTransactionType,
+                  )
+                }
+                class="h-10 rounded-md border border-violet-300/35 bg-black/35 px-3 text-sm text-violet-100 outline-none"
+              >
+                <option value="todos">Tipo</option>
+                <option value="income">Ingreso</option>
+                <option value="expense">Gasto</option>
+              </select>
+            </label>
 
-            <div class="mt-3 grid gap-2">
-              <label class="grid gap-1 text-xs uppercase tracking-[0.08em] text-violet-300/90">
-                Buscar
-                <input
-                  value={searchTerm}
-                  onInput={(event) => setSearchTerm(event.currentTarget.value)}
-                  type="search"
-                  placeholder="Descripción"
-                  class="rounded-md border border-violet-300/35 bg-black/35 px-2 py-2 text-sm text-violet-100 outline-none transition focus:border-violet-300/75"
-                />
-              </label>
-
-              <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                <label class="grid gap-1 text-xs uppercase tracking-[0.08em] text-violet-300/90">
-                  Mes
-                  <select
-                    value={monthFilter}
-                    onChange={(event) => setMonthFilter(event.currentTarget.value)}
-                    class="rounded-md border border-violet-300/35 bg-black/35 px-2 py-2 text-sm text-violet-100 outline-none"
-                  >
-                    {MONTHS.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {month.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label class="grid gap-1 text-xs uppercase tracking-[0.08em] text-violet-300/90">
-                  Año
-                  <select
-                    value={yearFilter}
-                    onChange={(event) => setYearFilter(event.currentTarget.value)}
-                    class="rounded-md border border-violet-300/35 bg-black/35 px-2 py-2 text-sm text-violet-100 outline-none"
-                  >
-                    {years.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <label class="grid gap-1 text-xs uppercase tracking-[0.08em] text-violet-300/90">
-                Categoría
-                <select
-                  value={categoryFilter}
-                  onChange={(event) => setCategoryFilter(event.currentTarget.value)}
-                  class="rounded-md border border-violet-300/35 bg-black/35 px-2 py-2 text-sm text-violet-100 outline-none"
-                >
-                  <option value="todas">Todas</option>
-                  {categoriesForFilter.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label class="grid gap-1 text-xs uppercase tracking-[0.08em] text-violet-300/90">
-                Tipo
-                <select
-                  value={typeFilter}
-                  onChange={(event) =>
-                    setTypeFilter(
-                      event.currentTarget.value as "todos" | BackendTransactionType,
-                    )
-                  }
-                  class="rounded-md border border-violet-300/35 bg-black/35 px-2 py-2 text-sm text-violet-100 outline-none"
-                >
-                  <option value="todos">Todos</option>
-                  <option value="income">Ingreso</option>
-                  <option value="expense">Gasto</option>
-                </select>
-              </label>
-            </div>
-          </article>
-        </aside>
+            <button
+              type="button"
+              onClick={resetFilters}
+              class="h-10 shrink-0 rounded-md border border-violet-300/35 bg-black/35 px-3 text-sm text-violet-100 transition hover:border-violet-300/55 hover:bg-black/45"
+            >
+              Limpiar
+            </button>
+          </div>
+        </article>
 
         <article class="rounded-2xl border border-violet-300/25 bg-black/35 p-4">
           <header class="flex flex-wrap items-center justify-between gap-2 border-b border-violet-300/15 pb-3">
@@ -883,37 +896,10 @@ export function TransactionsPage() {
                 Movimientos del periodo
               </h3>
               <p class="text-xs text-violet-300/85">
-                {selectedMonthLabel} {yearFilter} · {filteredTransactions.length} resultados
+                {selectedMonthLabel} {yearFilter} · {filteredTransactions.length} resultados · {filteredManualCount} manuales · {filteredInstallmentsCount} por cuota · Promedio {money.format(averageMovementAmount)}
               </p>
             </div>
           </header>
-
-          <div class="mt-3 grid gap-2 sm:grid-cols-3">
-            <div class="rounded-lg border border-violet-300/20 bg-violet-950/20 px-3 py-2">
-              <p class="text-[11px] uppercase tracking-[0.08em] text-violet-300/80">
-                Manuales
-              </p>
-              <p class="mt-1 text-sm font-semibold text-violet-100">
-                {filteredManualCount}
-              </p>
-            </div>
-            <div class="rounded-lg border border-violet-300/20 bg-violet-950/20 px-3 py-2">
-              <p class="text-[11px] uppercase tracking-[0.08em] text-violet-300/80">
-                Por cuotas
-              </p>
-              <p class="mt-1 text-sm font-semibold text-violet-100">
-                {filteredInstallmentsCount}
-              </p>
-            </div>
-            <div class="rounded-lg border border-violet-300/20 bg-violet-950/20 px-3 py-2">
-              <p class="text-[11px] uppercase tracking-[0.08em] text-violet-300/80">
-                Ticket promedio
-              </p>
-              <p class="mt-1 text-sm font-semibold text-violet-100">
-                {money.format(averageMovementAmount)}
-              </p>
-            </div>
-          </div>
 
           {isLoading ? (
             <p class="mt-3 rounded-lg bg-violet-950/25 px-3 py-8 text-center text-sm text-violet-200/70">
@@ -951,8 +937,8 @@ export function TransactionsPage() {
                             class={[
                               "inline-flex rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.06em]",
                               transaction.type === "income"
-                                ? "bg-emerald-500/20 text-emerald-200"
-                                : "bg-rose-500/20 text-rose-200",
+                                ? "bg-teal-500/20 text-teal-200"
+                                : "bg-red-500/20 text-red-200",
                             ].join(" ")}
                           >
                             {transactionTypeLabel(transaction.type)}
@@ -963,16 +949,36 @@ export function TransactionsPage() {
                           <p
                             class={[
                               "text-sm font-semibold",
-                              signedAmount < 0 ? "text-rose-300" : "text-emerald-300",
+                              signedAmount < 0 ? "text-red-300" : "text-teal-300",
                             ].join(" ")}
                           >
                             {money.format(signedAmount)}
                           </p>
 
                           {transaction.fromInstallment ? (
-                            <span class="inline-flex rounded-full border border-violet-300/35 bg-violet-900/40 px-2 py-0.5 text-[11px] uppercase tracking-[0.08em] text-violet-100">
-                              Cuota
-                            </span>
+                            <div class="flex items-center gap-2">
+                              <span class="inline-flex rounded-full border border-violet-300/35 bg-violet-900/40 px-2 py-0.5 text-[11px] uppercase tracking-[0.08em] text-violet-100">
+                                Cuota
+                              </span>
+                              <Link
+                                to="/dashboard/credits"
+                                title="Ver en creditos"
+                                aria-label="Ver en creditos"
+                                class="rounded-md border border-violet-300/25 bg-black/35 p-1.5 text-violet-200 transition hover:border-violet-300/45 hover:text-violet-100"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  stroke-width="2"
+                                  class="h-3.5 w-3.5"
+                                >
+                                  <path d="M10 14a4 4 0 0 1 0-6l2-2a4 4 0 1 1 6 6l-1 1" />
+                                  <path d="M14 10a4 4 0 0 1 0 6l-2 2a4 4 0 0 1-6-6l1-1" />
+                                </svg>
+                              </Link>
+                            </div>
                           ) : (
                             <div class="flex items-center gap-2">
                               <button
@@ -987,7 +993,7 @@ export function TransactionsPage() {
                                 type="button"
                                 onClick={() => void removeTransaction(transaction)}
                                 disabled={isSaving}
-                                class="rounded-md border border-rose-300/30 bg-black/35 px-2 py-1 text-[11px] text-rose-200"
+                                class="rounded-md border border-red-300/30 bg-black/35 px-2 py-1 text-[11px] text-red-200"
                               >
                                 Eliminar
                               </button>
@@ -1053,8 +1059,8 @@ export function TransactionsPage() {
                                 class={[
                                   "inline-flex rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-[0.06em]",
                                   transaction.type === "income"
-                                    ? "bg-emerald-500/20 text-emerald-200"
-                                    : "bg-rose-500/20 text-rose-200",
+                                    ? "bg-teal-500/20 text-teal-200"
+                                    : "bg-red-500/20 text-red-200",
                                 ].join(" ")}
                               >
                                 {transactionTypeLabel(transaction.type)}
@@ -1064,17 +1070,32 @@ export function TransactionsPage() {
                               class={[
                                 "px-2 py-2 text-right font-semibold",
                                 signedAmount < 0
-                                  ? "text-rose-300"
-                                  : "text-emerald-300",
+                                  ? "text-red-300"
+                                  : "text-teal-300",
                               ].join(" ")}
                             >
                               {money.format(signedAmount)}
                             </td>
                             <td class="rounded-r-lg px-2 py-2">
                               {transaction.fromInstallment ? (
-                                <p class="text-right text-[11px] uppercase tracking-[0.08em] text-violet-300/80">
-                                  Ver en Créditos
-                                </p>
+                                <Link
+                                  to="/dashboard/credits"
+                                  title="Ver en creditos"
+                                  aria-label="Ver en creditos"
+                                  class="ml-auto inline-flex rounded-md border border-violet-300/25 bg-black/35 p-1.5 text-violet-200 transition hover:border-violet-300/45 hover:text-violet-100"
+                                >
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    class="h-3.5 w-3.5"
+                                  >
+                                    <path d="M10 14a4 4 0 0 1 0-6l2-2a4 4 0 1 1 6 6l-1 1" />
+                                    <path d="M14 10a4 4 0 0 1 0 6l-2 2a4 4 0 0 1-6-6l1-1" />
+                                  </svg>
+                                </Link>
                               ) : (
                                 <div class="flex justify-end gap-1">
                                   <button
@@ -1100,7 +1121,7 @@ export function TransactionsPage() {
                                     type="button"
                                     onClick={() => void removeTransaction(transaction)}
                                     disabled={isSaving}
-                                    class="rounded-md border border-rose-300/30 bg-black/35 p-1.5 text-rose-200 hover:border-rose-300/55 disabled:cursor-not-allowed disabled:opacity-60"
+                                    class="rounded-md border border-red-300/30 bg-black/35 p-1.5 text-red-200 hover:border-red-300/55 disabled:cursor-not-allowed disabled:opacity-60"
                                     title="Eliminar transacción"
                                   >
                                     <svg
@@ -1321,3 +1342,5 @@ export function TransactionsPage() {
     </DashboardLayout>
   );
 }
+
+

@@ -8,7 +8,6 @@ import {
 } from "../../../platform/pywebview/notes.api";
 import type { NoteItem } from "../../../platform/pywebview/notes.api.types";
 import { DashboardLayout } from "../components/DashboardLayout";
-import { SectionExportActions } from "../components/SectionExportActions";
 import { useKindNoticeToast } from "../../../shared/ui/useToastNotice";
 
 type NoteForm = {
@@ -302,7 +301,6 @@ export function NotesPage() {
 
   return (
     <DashboardLayout
-      sectionTag="Notas"
       title="Notas"
       subtitle="Guarda tus notas."
     >
@@ -310,7 +308,7 @@ export function NotesPage() {
         <div>
           <h3 class="text-sm font-semibold text-violet-100">Acciones de notas</h3>
           <p class="text-xs text-violet-300/85">
-            Crea nuevas notas y exporta la colección actual.
+            Crea nuevas notas y organiza la colección actual.
           </p>
         </div>
 
@@ -323,13 +321,6 @@ export function NotesPage() {
           >
             Nueva nota
           </button>
-
-          <SectionExportActions
-            userId={userId}
-            section="notes"
-            disabled={!userId || isLoading || isSaving}
-            onNotice={setNotice}
-          />
         </div>
       </section>
 
@@ -440,7 +431,7 @@ export function NotesPage() {
                       type="button"
                       onClick={() => void removeNote(note.id)}
                       disabled={isSaving}
-                      class="rounded-md border border-rose-300/30 bg-black/25 px-2 py-1 text-xs text-rose-200 hover:border-rose-300/55 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-md border border-red-300/30 bg-black/25 px-2 py-1 text-xs text-red-200 hover:border-red-300/55 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Eliminar
                     </button>
@@ -528,3 +519,5 @@ export function NotesPage() {
     </DashboardLayout>
   );
 }
+
+

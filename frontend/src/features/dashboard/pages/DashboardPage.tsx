@@ -1,26 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { useAuth } from "../../../platform/auth/AuthProvider";
-import { listCategories } from "../../../platform/pywebview/categories.api";
-import type { CategoryItem } from "../../../platform/pywebview/categories.api.types";
+import { listMonthBills } from "../../../platform/pywebview/bills.api";
+import type { BillItem, BillStatus } from "../../../platform/pywebview/bills.api.types";
 import { listCredits } from "../../../platform/pywebview/credits.api";
 import type { CreditItem } from "../../../platform/pywebview/credits.api.types";
+import { listNotes } from "../../../platform/pywebview/notes.api";
+import type { NoteItem } from "../../../platform/pywebview/notes.api.types";
 import { listTransactions } from "../../../platform/pywebview/transactions.api";
 import type { TransactionItem } from "../../../platform/pywebview/transactions.api.types";
-import {
-  exportCsv,
-  exportDashboardChartPng as exportDashboardChartPngFile,
-  exportDashboardVisualPdf,
-} from "../../../platform/pywebview/exports.api";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
   FinanceTrendChart,
   type FinanceTrendPoint,
 } from "../components/FinanceTrendChart";
 import { MonthlyCompositionChart } from "../components/MonthlyCompositionChart";
-import {
-  useKindNoticeToast,
-  useStringNoticeToast,
-} from "../../../shared/ui/useToastNotice";
+import { useStringNoticeToast } from "../../../shared/ui/useToastNotice";
 
 type UiTransaction = {
   id: number;
@@ -42,6 +36,24 @@ type UiCredit = {
   firstInstallmentDate: string;
 };
 
+type UiBill = {
+  id: number;
+  name: string;
+  amount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  dueDate: string;
+  status: BillStatus;
+  daysUntilDue: number | null;
+};
+
+type UiNote = {
+  id: number;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type SecondaryMetricCardProps = {
   className: string;
   label: string;
@@ -61,12 +73,8 @@ function SecondaryMetricCard({
 }: SecondaryMetricCardProps) {
   return (
     <article class={className}>
-      <header class="flex items-center justify-between gap-2">
+      <header>
         <p class="text-xs uppercase tracking-[0.08em] text-violet-300/90">{label}</p>
-        <div class="flex items-center gap-1.5">
-          <span class="h-2.5 w-2.5 rounded-full bg-emerald-300/85" />
-          <span class="h-2.5 w-2.5 rounded-full bg-rose-300/85" />
-        </div>
       </header>
 
       <p
@@ -96,11 +104,64 @@ function toUiErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function isUserNotFoundMessage(value: string | undefined) {
+  if (!value) return false;
+  return value.toLowerCase().includes("usuario no encontrado");
+}
+
 function formatShortDate(value: string) {
   return new Intl.DateTimeFormat("es-AR", {
     day: "2-digit",
     month: "short",
   }).format(new Date(`${value}T00:00:00`));
+}
+
+function formatDateLabel(value: string) {
+  const date = new Date(value.replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return "Sin fecha";
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function relativeDateLabel(value: string) {
+  const date = new Date(value.replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return formatDateLabel(value);
+
+  const now = new Date();
+  const oneDay = 24 * 60 * 60 * 1000;
+
+  const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+
+  const diffInDays = Math.round(
+    (startOfNow.getTime() - startOfDate.getTime()) / oneDay,
+  );
+
+  if (diffInDays === 0) return "Hoy";
+  if (diffInDays === 1) return "Ayer";
+  return formatDateLabel(value);
+}
+
+function greetingByHour(username: string) {
+  const hour = new Date().getHours();
+
+  if (hour >= 6 && hour < 12) {
+    return `Buenos días, ${username} ☀️`;
+  }
+
+  if (hour >= 12 && hour < 19) {
+    return `Buenas tardes, ${username}`;
+  }
+
+  return `Buenas noches, ${username}`;
 }
 
 function toISODate(value: Date) {
@@ -120,138 +181,6 @@ function toYearMonth(value: Date) {
   const year = String(value.getFullYear());
   const month = String(value.getMonth() + 1).padStart(2, "0");
   return `${year}-${month}`;
-}
-
-function createCompositionChartImageDataUrl(
-  income: number,
-  expense: number,
-  periodLabel: string,
-  formatAmount: (value: number) => string,
-): string {
-  const width = 980;
-  const height = 320;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return "";
-
-  const total = income + expense;
-  const incomeRatio = total > 0 ? income / total : 0;
-
-  ctx.fillStyle = "#151428";
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.fillStyle = "#d8b4fe";
-  ctx.font = "600 22px Segoe UI";
-  ctx.fillText("Composicion del mes", 40, 44);
-  ctx.fillStyle = "#c4b5fd";
-  ctx.font = "400 14px Segoe UI";
-  ctx.fillText(`Periodo ${periodLabel}`, 40, 68);
-
-  const centerX = 210;
-  const centerY = 186;
-  const radius = 84;
-  const ringWidth = 34;
-
-  ctx.lineWidth = ringWidth;
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "rgba(109, 40, 217, 0.35)";
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-  ctx.stroke();
-
-  if (total > 0) {
-    const startAngle = -Math.PI / 2;
-    const incomeAngle = startAngle + Math.PI * 2 * incomeRatio;
-
-    ctx.strokeStyle = "#34d399";
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, startAngle, incomeAngle);
-    ctx.stroke();
-
-    ctx.strokeStyle = "#fb7185";
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, incomeAngle, startAngle + Math.PI * 2);
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = "#e9d5ff";
-  ctx.textAlign = "center";
-  ctx.font = "500 11px Segoe UI";
-  ctx.fillText("TOTAL", centerX, centerY - 12);
-  ctx.font = "600 14px Segoe UI";
-  ctx.fillText(formatAmount(total), centerX, centerY + 10);
-
-  ctx.textAlign = "left";
-  ctx.fillStyle = "rgba(52, 211, 153, 0.2)";
-  ctx.fillRect(390, 108, 520, 74);
-  ctx.strokeStyle = "rgba(52, 211, 153, 0.45)";
-  ctx.strokeRect(390, 108, 520, 74);
-  ctx.fillStyle = "#bbf7d0";
-  ctx.font = "600 13px Segoe UI";
-  ctx.fillText("Ingresos", 412, 134);
-  ctx.font = "700 18px Segoe UI";
-  ctx.fillText(formatAmount(income), 412, 164);
-
-  ctx.fillStyle = "rgba(251, 113, 133, 0.2)";
-  ctx.fillRect(390, 198, 520, 74);
-  ctx.strokeStyle = "rgba(251, 113, 133, 0.45)";
-  ctx.strokeRect(390, 198, 520, 74);
-  ctx.fillStyle = "#fecdd3";
-  ctx.font = "600 13px Segoe UI";
-  ctx.fillText("Gastos", 412, 224);
-  ctx.font = "700 18px Segoe UI";
-  ctx.fillText(formatAmount(expense), 412, 254);
-
-  return canvas.toDataURL("image/png");
-}
-
-function dataUrlToImage(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("No se pudo preparar la imagen para exportación"));
-    image.src = dataUrl;
-  });
-}
-
-async function combineDashboardChartsImage(
-  trendDataUrl: string,
-  compositionDataUrl: string,
-): Promise<string> {
-  const [trendImage, compositionImage] = await Promise.all([
-    dataUrlToImage(trendDataUrl),
-    dataUrlToImage(compositionDataUrl),
-  ]);
-
-  const padding = 24;
-  const sectionGap = 20;
-  const sectionWidth = Math.max(trendImage.width, compositionImage.width);
-  const canvas = document.createElement("canvas");
-  canvas.width = sectionWidth + padding * 2;
-  canvas.height =
-    padding * 2 +
-    trendImage.height +
-    sectionGap +
-    compositionImage.height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("No se pudo preparar el lienzo de exportación");
-
-  ctx.fillStyle = "#151428";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const trendX = padding + (sectionWidth - trendImage.width) / 2;
-  const compositionX = padding + (sectionWidth - compositionImage.width) / 2;
-  const trendY = padding;
-  const compositionY = padding + trendImage.height + sectionGap;
-
-  ctx.drawImage(trendImage, trendX, trendY);
-  ctx.drawImage(compositionImage, compositionX, compositionY);
-
-  return canvas.toDataURL("image/png");
 }
 
 function getNextInstallmentDate(credit: UiCredit) {
@@ -308,27 +237,89 @@ function mapCredit(item: CreditItem): UiCredit {
   };
 }
 
+function mapBill(item: BillItem): UiBill {
+  const amount = Number(item.amount);
+  const paidAmountRaw = Number(item.paid_amount ?? 0);
+  const paidAmount = Number.isFinite(paidAmountRaw)
+    ? Math.min(Math.max(paidAmountRaw, 0), amount)
+    : 0;
+  const remainingAmountRaw = Number(item.remaining_amount);
+  const remainingAmount =
+    Number.isFinite(remainingAmountRaw) && remainingAmountRaw >= 0
+      ? remainingAmountRaw
+      : Math.max(amount - paidAmount, 0);
+
+  return {
+    id: item.id,
+    name: item.name?.trim() || "Factura",
+    amount,
+    paidAmount,
+    remainingAmount,
+    dueDate: item.due_date,
+    status: item.status,
+    daysUntilDue:
+      typeof item.days_until_due === "number" ? item.days_until_due : null,
+  };
+}
+
+function mapNote(item: NoteItem): UiNote {
+  return {
+    id: item.id,
+    title: item.title?.trim() || "Sin titulo",
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+  };
+}
+
+function billStatusLabel(status: BillStatus) {
+  if (status === "paid") return "Pagada";
+  if (status === "overdue") return "Vencida";
+  return "Pendiente";
+}
+
+function billStatusBadgeClass(status: BillStatus) {
+  if (status === "paid") {
+    return "border-teal-300/45 bg-teal-400/15 text-teal-100";
+  }
+  if (status === "overdue") {
+    return "border-red-300/45 bg-red-400/20 text-red-100";
+  }
+  return "border-sky-300/45 bg-sky-300/15 text-sky-100";
+}
+
+function billDueHint(bill: UiBill) {
+  if (bill.status === "paid") {
+    return "Pagada";
+  }
+
+  const days = bill.daysUntilDue;
+  if (typeof days !== "number") {
+    return "Sin informacion de vencimiento";
+  }
+
+  if (days < 0) {
+    const daysLate = Math.abs(days);
+    return daysLate === 1 ? "Vencio hace 1 dia" : `Vencio hace ${daysLate} dias`;
+  }
+
+  if (days === 0) return "Vence hoy";
+  if (days === 1) return "Vence en 1 dia";
+  return `Vence en ${days} dias`;
+}
+
 export function DashboardPage() {
-  const { session } = useAuth();
+  const { session, logout } = useAuth();
   const username = session?.username ?? "Usuario";
   const userId = session?.user_id ?? 0;
 
   const [transactions, setTransactions] = useState<UiTransaction[]>([]);
   const [credits, setCredits] = useState<UiCredit[]>([]);
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [bills, setBills] = useState<UiBill[]>([]);
+  const [notes, setNotes] = useState<UiNote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
-  const [exportNotice, setExportNotice] = useState<{
-    kind: "success" | "error";
-    message: string;
-  } | null>(null);
-  const [chartExporting, setChartExporting] = useState<
-    "csv" | "png" | "pdf" | null
-  >(null);
-  const trendChartCaptureRef = useRef<(() => string | null) | null>(null);
 
   useStringNoticeToast(notice, setNotice);
-  useKindNoticeToast(exportNotice, setExportNotice);
 
   const primaryCardClass =
     "rounded-2xl border border-violet-300/20 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)] sm:col-span-2 xl:col-span-2";
@@ -345,7 +336,8 @@ export function DashboardPage() {
     if (!userId) {
       setTransactions([]);
       setCredits([]);
-      setCategories([]);
+      setBills([]);
+      setNotes([]);
       setIsLoading(false);
       return;
     }
@@ -357,18 +349,29 @@ export function DashboardPage() {
       setNotice(null);
 
       try {
-        const [transactionsResponse, creditsResponse, categoriesResponse] =
+        const [
+          transactionsResponse,
+          creditsResponse,
+          billsResponse,
+          notesResponse,
+        ] =
           await Promise.all([
             listTransactions(userId),
             listCredits(userId),
-            listCategories(userId),
+            listMonthBills(userId),
+            listNotes(userId),
           ]);
 
         if (!isMounted) return;
 
         if (!transactionsResponse.ok) {
+          const message = transactionsResponse.error ?? transactionsResponse.message;
+          if (isUserNotFoundMessage(message)) {
+            await logout();
+            return;
+          }
           setTransactions([]);
-          setNotice(transactionsResponse.error ?? transactionsResponse.message);
+          setNotice(message);
         } else {
           const rows = transactionsResponse.data?.transactions ?? [];
           const mappedTransactions = rows.map(mapTransaction);
@@ -376,24 +379,49 @@ export function DashboardPage() {
         }
 
         if (!creditsResponse.ok) {
+          const message = creditsResponse.error ?? creditsResponse.message;
+          if (isUserNotFoundMessage(message)) {
+            await logout();
+            return;
+          }
           setCredits([]);
-          setNotice((previous) => previous ?? (creditsResponse.error ?? creditsResponse.message));
+          setNotice((previous) => previous ?? message);
         } else {
           const rows = creditsResponse.data?.credits ?? [];
           setCredits(rows.map(mapCredit));
         }
 
-        if (!categoriesResponse.ok) {
-          setCategories([]);
-          setNotice((previous) => previous ?? (categoriesResponse.error ?? categoriesResponse.message));
+        if (!billsResponse.ok) {
+          const message = billsResponse.error ?? billsResponse.message;
+          if (isUserNotFoundMessage(message)) {
+            await logout();
+            return;
+          }
+          setBills([]);
+          setNotice((previous) => previous ?? message);
         } else {
-          setCategories(categoriesResponse.data?.categories ?? []);
+          const rows = billsResponse.data?.bills ?? [];
+          setBills(rows.map(mapBill));
+        }
+
+        if (!notesResponse.ok) {
+          const message = notesResponse.error ?? notesResponse.message;
+          if (isUserNotFoundMessage(message)) {
+            await logout();
+            return;
+          }
+          setNotes([]);
+          setNotice((previous) => previous ?? message);
+        } else {
+          const rows = notesResponse.data?.notes ?? [];
+          setNotes(rows.map(mapNote));
         }
       } catch (error) {
         if (!isMounted) return;
         setTransactions([]);
         setCredits([]);
-        setCategories([]);
+        setBills([]);
+        setNotes([]);
         setNotice(
           toUiErrorMessage(error, "No se pudieron cargar los datos del dashboard."),
         );
@@ -409,19 +437,11 @@ export function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [userId]);
+  }, [userId, logout]);
 
   const now = new Date();
   const currentMonth = String(now.getMonth() + 1).padStart(2, "0");
   const currentYear = String(now.getFullYear());
-  const currentPeriodLabel = useMemo(
-    () =>
-      new Intl.DateTimeFormat("es-AR", {
-        month: "long",
-        year: "numeric",
-      }).format(new Date(Number(currentYear), Number(currentMonth) - 1, 1)),
-    [currentMonth, currentYear],
-  );
 
   const monthTransactions = useMemo(
     () =>
@@ -491,6 +511,67 @@ export function DashboardPage() {
     }, 0);
   }, [activeCredits, now]);
 
+  const pendingBills = useMemo(
+    () => bills.filter((bill) => bill.status === "pending"),
+    [bills],
+  );
+
+  const overdueBills = useMemo(
+    () => bills.filter((bill) => bill.status === "overdue"),
+    [bills],
+  );
+
+  const openBills = useMemo(
+    () => bills.filter((bill) => bill.status !== "paid"),
+    [bills],
+  );
+
+  const dueSoonBills = useMemo(
+    () =>
+      bills.filter(
+        (bill) =>
+          bill.status === "pending" &&
+          typeof bill.daysUntilDue === "number" &&
+          bill.daysUntilDue >= 0 &&
+          bill.daysUntilDue <= 3,
+      ),
+    [bills],
+  );
+
+  const openBillsAmount = useMemo(
+    () => openBills.reduce((sum, bill) => sum + bill.remainingAmount, 0),
+    [openBills],
+  );
+
+  const highlightedBills = useMemo(
+    () =>
+      [...bills]
+        .sort((a, b) => {
+          const rankA = a.status === "paid" ? 1 : 0;
+          const rankB = b.status === "paid" ? 1 : 0;
+          const byStatus = rankA - rankB;
+          if (byStatus !== 0) return byStatus;
+
+          const byDate = a.dueDate.localeCompare(b.dueDate);
+          if (byDate !== 0) return byDate;
+          return a.id - b.id;
+        })
+        .slice(0, 6),
+    [bills],
+  );
+
+  const recentNotes = useMemo(
+    () =>
+      [...notes]
+        .sort((a, b) => {
+          const byUpdated = b.updatedAt.localeCompare(a.updatedAt);
+          if (byUpdated !== 0) return byUpdated;
+          return b.id - a.id;
+        })
+        .slice(0, 3),
+    [notes],
+  );
+
   const trendSeries = useMemo<FinanceTrendPoint[]>(() => {
     const buckets = new Map<string, { income: number; expense: number }>();
 
@@ -528,227 +609,18 @@ export function DashboardPage() {
     return points;
   }, [transactions, now]);
 
-  const handleTrendChartCaptureReady = useCallback(
-    (capture: (() => string | null) | null) => {
-      trendChartCaptureRef.current = capture;
-    },
-    [],
-  );
-
-  async function getCombinedDashboardChartsImageDataUrl() {
-    const capture = trendChartCaptureRef.current;
-    if (!capture) {
-      throw new Error("El grafico de tendencia aun no esta listo para exportar.");
-    }
-
-    const trendDataUrl = capture();
-    if (!trendDataUrl) {
-      throw new Error("No se pudo capturar la tendencia financiera.");
-    }
-
-    const compositionDataUrl = createCompositionChartImageDataUrl(
-      monthIncome,
-      monthExpense,
-      currentPeriodLabel,
-      (value) => money.format(value),
-    );
-
-    if (!compositionDataUrl) {
-      throw new Error("No se pudo generar la composicion del mes.");
-    }
-
-    return combineDashboardChartsImage(trendDataUrl, compositionDataUrl);
-  }
-
-  async function exportDashboardCsvSummary() {
-    if (!userId) {
-      setExportNotice({ kind: "error", message: "Sesion invalida." });
-      return;
-    }
-
-    setChartExporting("csv");
-
-    try {
-      const response = await exportCsv(userId, "summary");
-
-      if (!response.ok) {
-        setExportNotice({
-          kind: "error",
-          message: response.error ?? response.message,
-        });
-        return;
-      }
-
-      const fileName = response.data?.file_name ?? response.file_name ?? "summary.csv";
-      const filePath = response.data?.file_path ?? response.file_path;
-
-      setExportNotice({
-        kind: "success",
-        message: filePath
-          ? `${response.message}. Archivo: ${fileName}. Ruta: ${filePath}`
-          : `${response.message}. Archivo: ${fileName}`,
-      });
-    } catch (error) {
-      setExportNotice({
-        kind: "error",
-        message: toUiErrorMessage(error, "No se pudo exportar el CSV."),
-      });
-    } finally {
-      setChartExporting(null);
-    }
-  }
-
-  async function exportDashboardChartPng() {
-    if (!userId) {
-      setExportNotice({ kind: "error", message: "Sesion invalida." });
-      return;
-    }
-
-    setChartExporting("png");
-
-    try {
-      const imageDataUrl = await getCombinedDashboardChartsImageDataUrl();
-
-      const response = await exportDashboardChartPngFile(userId, imageDataUrl);
-
-      if (!response.ok) {
-        setExportNotice({
-          kind: "error",
-          message: response.error ?? response.message,
-        });
-        return;
-      }
-
-      const fileName =
-        response.data?.file_name ??
-        response.file_name ??
-        "bolsi_dashboard_chart.png";
-      const filePath = response.data?.file_path ?? response.file_path;
-
-      setExportNotice({
-        kind: "success",
-        message: filePath
-          ? `${response.message}. Archivo: ${fileName}. Ruta: ${filePath}`
-          : `${response.message}. Archivo: ${fileName}`,
-      });
-    } catch (error) {
-      setExportNotice({
-        kind: "error",
-        message: toUiErrorMessage(
-          error,
-          "No se pudo exportar los graficos del dashboard en PNG.",
-        ),
-      });
-    } finally {
-      setChartExporting(null);
-    }
-  }
-
-  async function exportDashboardPdfWithChart() {
-    if (!userId) {
-      setExportNotice({ kind: "error", message: "Sesion invalida." });
-      return;
-    }
-
-    setChartExporting("pdf");
-
-    try {
-      const imageDataUrl = await getCombinedDashboardChartsImageDataUrl();
-
-      const response = await exportDashboardVisualPdf(userId, imageDataUrl, {
-        period_label: currentPeriodLabel,
-        generated_at: new Intl.DateTimeFormat("es-AR", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(new Date()),
-        month_income: monthIncome,
-        month_expense: monthExpense,
-        month_balance: monthBalance,
-        active_credits: activeCredits.length,
-        pending_installments: pendingInstallments,
-        monthly_due_amount: monthlyDueAmount,
-        categories_count: categories.length,
-      });
-
-      if (!response.ok) {
-        setExportNotice({
-          kind: "error",
-          message: response.error ?? response.message,
-        });
-        return;
-      }
-
-      const fileName =
-        response.data?.file_name ??
-        response.file_name ??
-        "bolsi_dashboard_visual.pdf";
-      const filePath = response.data?.file_path ?? response.file_path;
-
-      setExportNotice({
-        kind: "success",
-        message: filePath
-          ? `${response.message}. Archivo: ${fileName}. Ruta: ${filePath}`
-          : `${response.message}. Archivo: ${fileName}`,
-      });
-    } catch (error) {
-      setExportNotice({
-        kind: "error",
-        message: toUiErrorMessage(error, "No se pudo exportar el PDF del dashboard."),
-      });
-    } finally {
-      setChartExporting(null);
-    }
-  }
-
   return (
     <DashboardLayout
-      sectionTag="Inicio"
-      title={`Bienvenido, ${username}`}
+      title={greetingByHour(username)}
       subtitle="Resumen de tus finanzas."
     >
-      <section class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-300/25 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
-        <div>
-          <h3 class="text-sm font-semibold text-violet-100">Acciones del panel</h3>
-          <p class="text-xs text-violet-300/85">
-            Exporta CSV, grafico PNG y reporte completo con metricas en PDF.
-          </p>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void exportDashboardCsvSummary()}
-            disabled={!userId || isLoading || chartExporting !== null}
-            class="rounded-lg border border-violet-300/25 bg-black/25 px-3 py-2 text-sm text-violet-200 transition hover:border-violet-300/45 hover:text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {chartExporting === "csv" ? "Exportando CSV..." : "Exportar CSV"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void exportDashboardChartPng()}
-            disabled={!userId || isLoading || chartExporting !== null}
-            class="rounded-lg border border-violet-300/25 bg-black/25 px-3 py-2 text-sm text-violet-200 transition hover:border-violet-300/45 hover:text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {chartExporting === "png" ? "Exportando PNG..." : "Exportar grafico PNG"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void exportDashboardPdfWithChart()}
-            disabled={!userId || isLoading || chartExporting !== null}
-            class="rounded-lg border border-violet-300/35 bg-violet-900/45 px-3 py-2 text-sm font-semibold text-violet-100 transition hover:bg-violet-800/60 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {chartExporting === "pdf" ? "Exportando PDF..." : "Exportar todo en PDF"}
-          </button>
-        </div>
-      </section>
-
       <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <article class={primaryCardClass}>
           <div class="flex items-center justify-between gap-2">
             <p class="text-xs uppercase tracking-[0.08em] text-violet-300/90">
               Ingresos del mes
             </p>
-            <span class="h-2.5 w-2.5 rounded-full bg-emerald-300/85" />
+            <span class="h-2.5 w-2.5 rounded-full bg-teal-300/85" />
           </div>
           <p class="mt-2 text-2xl font-semibold text-violet-100">
             {money.format(monthIncome)}
@@ -760,7 +632,7 @@ export function DashboardPage() {
             <p class="text-xs uppercase tracking-[0.08em] text-violet-300/90">
               Gastos del mes
             </p>
-            <span class="h-2.5 w-2.5 rounded-full bg-rose-300/85" />
+            <span class="h-2.5 w-2.5 rounded-full bg-red-300/85" />
           </div>
           <p class="mt-2 text-2xl font-semibold text-violet-100">
             {money.format(monthExpense)}
@@ -772,15 +644,11 @@ export function DashboardPage() {
             <p class="text-xs uppercase tracking-[0.08em] text-violet-300/90">
               Balance del mes
             </p>
-            <div class="flex items-center gap-1.5">
-              <span class="h-2.5 w-2.5 rounded-full bg-emerald-300/85" />
-              <span class="h-2.5 w-2.5 rounded-full bg-rose-300/85" />
-            </div>
           </div>
           <p
             class={[
               "mt-2 text-2xl font-semibold",
-              monthBalance < 0 ? "text-rose-300" : "text-emerald-300",
+              monthBalance < 0 ? "text-red-300" : "text-teal-300",
             ].join(" ")}
           >
             {money.format(monthBalance)}
@@ -792,7 +660,7 @@ export function DashboardPage() {
           label="Créditos activos"
           value={activeCredits.length}
           hint={`${credits.length} registrados`}
-          valueClassName="text-emerald-300"
+          valueClassName="text-teal-300"
         />
 
         <SecondaryMetricCard
@@ -800,7 +668,7 @@ export function DashboardPage() {
           label="Cuotas pendientes"
           value={pendingInstallments}
           hint="Pendientes por pagar"
-          valueClassName="text-rose-300"
+          valueClassName="text-red-300"
         />
 
         <SecondaryMetricCard
@@ -809,15 +677,32 @@ export function DashboardPage() {
           value={money.format(monthlyDueAmount)}
           hint="Total estimado mensual"
           compact
-          valueClassName="text-rose-300"
+          valueClassName="text-red-300"
         />
 
         <SecondaryMetricCard
           className={secondaryCardClass}
-          label="Categorías creadas"
-          value={categories.length}
-          hint="Disponibles para organizar"
-          valueClassName="text-emerald-300"
+          label="Saldo facturas pendientes"
+          value={money.format(openBillsAmount)}
+          hint={`${openBills.length} abiertas`}
+          compact
+          valueClassName="text-red-300"
+        />
+
+        <SecondaryMetricCard
+          className={secondaryCardClass}
+          label="Facturas vencidas"
+          value={overdueBills.length}
+          hint={`${pendingBills.length} pendientes`}
+          valueClassName="text-red-300"
+        />
+
+        <SecondaryMetricCard
+          className={secondaryCardClass}
+          label="Vencen pronto"
+          value={dueSoonBills.length}
+          hint="Proximas 72 horas"
+          valueClassName="text-sky-300"
         />
       </div>
 
@@ -836,7 +721,6 @@ export function DashboardPage() {
 
           <FinanceTrendChart
             data={trendSeries}
-            onCaptureReady={handleTrendChartCaptureReady}
           />
         </article>
 
@@ -847,7 +731,7 @@ export function DashboardPage() {
         />
       </section>
 
-      <div class="mt-5 grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+      <div class="mt-5 grid min-w-0 gap-3 xl:grid-cols-2">
         <article class="min-w-0 rounded-2xl border border-violet-300/20 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
           <header class="flex items-center justify-between gap-2">
             <div>
@@ -893,7 +777,7 @@ export function DashboardPage() {
                         <p
                           class={[
                             "text-sm font-semibold",
-                            signedAmount < 0 ? "text-rose-300" : "text-emerald-300",
+                            signedAmount < 0 ? "text-red-300" : "text-teal-300",
                           ].join(" ")}
                         >
                           {money.format(signedAmount)}
@@ -937,8 +821,8 @@ export function DashboardPage() {
                             class={[
                               "rounded-r-lg px-2 py-2 text-right font-semibold",
                               signedAmount < 0
-                                ? "text-rose-300"
-                                : "text-emerald-300",
+                                ? "text-red-300"
+                                : "text-teal-300",
                             ].join(" ")}
                           >
                             {money.format(signedAmount)}
@@ -999,7 +883,7 @@ export function DashboardPage() {
                     </p>
                     <div class="mt-2 h-2 rounded-full bg-violet-900/35">
                       <div
-                        class="h-full rounded-full bg-linear-to-r from-violet-400 to-fuchsia-300"
+                        class="h-full rounded-full bg-linear-to-r from-violet-400 to-red-300"
                         style={{ width: `${progress}%` }}
                       />
                     </div>
@@ -1009,7 +893,119 @@ export function DashboardPage() {
             </div>
           )}
         </article>
+
+        <article class="min-w-0 rounded-2xl border border-violet-300/20 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
+          <header class="flex items-center justify-between gap-2">
+            <div>
+              <p class="text-sm font-semibold uppercase tracking-[0.08em] text-violet-200">
+                Facturas y vencimientos
+              </p>
+              <p class="text-xs text-violet-300/80">
+                Pendientes y vencidas siempre visibles; pagadas del mes actual.
+              </p>
+            </div>
+            <span class="rounded-full border border-violet-300/30 bg-violet-900/30 px-2.5 py-1 text-xs font-semibold text-violet-100">
+              {bills.length}
+            </span>
+          </header>
+
+          {isLoading ? (
+            <p class="mt-3 rounded-lg bg-violet-950/25 px-3 py-6 text-center text-sm text-violet-200/75">
+              Cargando facturas...
+            </p>
+          ) : highlightedBills.length === 0 ? (
+            <p class="mt-3 rounded-lg bg-violet-950/25 px-3 py-6 text-center text-sm text-violet-200/75">
+              No hay facturas activas ni pagadas este mes.
+            </p>
+          ) : (
+            <div class="mt-3 grid gap-2 sm:grid-cols-2">
+              {highlightedBills.map((bill) => (
+                <article
+                  key={bill.id}
+                  class={[
+                    "rounded-lg border border-violet-300/20 bg-violet-950/25 p-3",
+                    highlightedBills.length === 1 ? "sm:col-span-2" : "",
+                  ].join(" ")}
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <p class="text-sm font-medium text-violet-100">{bill.name}</p>
+                    <span
+                      class={[
+                        "rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.05em]",
+                        billStatusBadgeClass(bill.status),
+                      ].join(" ")}
+                    >
+                      {billStatusLabel(bill.status)}
+                    </span>
+                  </div>
+
+                  <p class="mt-2 text-lg font-semibold text-red-300">
+                    {money.format(bill.remainingAmount)}
+                  </p>
+
+                  {bill.remainingAmount < bill.amount ? (
+                    <p class="mt-1 text-xs text-violet-300/75">
+                      Total {money.format(bill.amount)} · Abonado {money.format(bill.paidAmount)}
+                    </p>
+                  ) : null}
+
+                  <p class="mt-1 text-xs text-violet-300/80">
+                    Vence {formatShortDate(bill.dueDate)} · {billDueHint(bill)}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article class="min-w-0 rounded-2xl border border-violet-300/20 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
+          <header class="flex items-center justify-between gap-2">
+            <div>
+              <p class="text-sm font-semibold uppercase tracking-[0.08em] text-violet-200">
+                Notas recientes
+              </p>
+              <p class="text-xs text-violet-300/80">
+                Ultimas notas creadas o editadas.
+              </p>
+            </div>
+            <span class="rounded-full border border-violet-300/30 bg-violet-900/30 px-2.5 py-1 text-xs font-semibold text-violet-100">
+              {recentNotes.length}
+            </span>
+          </header>
+
+          {isLoading ? (
+            <p class="mt-3 rounded-lg bg-violet-950/25 px-3 py-6 text-center text-sm text-violet-200/75">
+              Cargando notas...
+            </p>
+          ) : recentNotes.length === 0 ? (
+            <p class="mt-3 rounded-lg bg-violet-950/25 px-3 py-6 text-center text-sm text-violet-200/75">
+              Todavia no hay notas.
+            </p>
+          ) : (
+            <div class="mt-3 space-y-2">
+              {recentNotes.map((note) => {
+                const wasEdited = note.updatedAt !== note.createdAt;
+
+                return (
+                  <article
+                    key={note.id}
+                    class="rounded-lg border border-violet-300/20 bg-violet-950/25 px-3 py-2.5"
+                  >
+                    <p class="text-sm font-medium text-violet-100">{note.title}</p>
+                    <p class="mt-1 text-xs text-violet-300/80">
+                      {wasEdited ? "Editada" : "Creada"} {relativeDateLabel(
+                        wasEdited ? note.updatedAt : note.createdAt,
+                      )}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </article>
       </div>
     </DashboardLayout>
   );
 }
+
+

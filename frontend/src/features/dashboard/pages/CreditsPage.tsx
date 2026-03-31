@@ -15,7 +15,6 @@ import { CreditProgressChart } from "../components/CreditProgressChart";
 import type { CreditItem } from "../../../platform/pywebview/credits.api.types";
 import { listCategories } from "../../../platform/pywebview/categories.api";
 import type { CategoryItem } from "../../../platform/pywebview/categories.api.types";
-import { SectionExportActions } from "../components/SectionExportActions";
 import { useKindNoticeToast } from "../../../shared/ui/useToastNotice";
 
 type NormalizedCategoryType = "income" | "expense" | null;
@@ -91,6 +90,17 @@ function formatLongDate(value: string) {
     month: "short",
     year: "numeric",
   }).format(parseDate(value));
+}
+
+function formatCompactDate(value: string) {
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+    .format(parseDate(value))
+    .replace(" de ", " ")
+    .replace(" de ", " ");
 }
 
 function createEmptyForm(defaultCategoryId: number | null): CreditForm {
@@ -289,6 +299,8 @@ export function CreditsPage() {
     () => (selectedCredit ? buildInstallments(selectedCredit) : []),
     [selectedCredit],
   );
+
+  const useCompactActiveCreditsList = activeCredits.length > 2;
 
   const totalToPayThisMonth = useMemo(() => {
     const now = new Date();
@@ -727,7 +739,6 @@ export function CreditsPage() {
 
   return (
     <DashboardLayout
-      sectionTag="Finanzas"
       title="Creditos"
       subtitle="Gestiona tus creditos y cuotas."
     >
@@ -741,12 +752,6 @@ export function CreditsPage() {
           >
             Nuevo credito
           </button>
-          <SectionExportActions
-            userId={userId}
-            section="credits"
-            disabled={!userId || isLoading || isSaving}
-            onNotice={setNotice}
-          />
         </div>
 
         <article class="rounded-2xl border border-violet-300/20 bg-black/35 px-4 py-3 text-right shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
@@ -856,7 +861,14 @@ export function CreditsPage() {
               Sin creditos activos.
             </p>
           ) : (
-            <div class="mt-3 grid gap-3 sm:grid-cols-2">
+            <div
+              class={[
+                "mt-3",
+                useCompactActiveCreditsList
+                  ? "grid max-h-[30rem] gap-2 overflow-auto pr-1"
+                  : "grid gap-3 sm:grid-cols-2",
+              ].join(" ")}
+            >
               {activeCredits.map((credit) => {
                 const remainingInstallments =
                   credit.totalInstallments - credit.paidInstallments;
@@ -923,7 +935,7 @@ export function CreditsPage() {
                             void removeCredit(credit.id);
                           }}
                           disabled={isSaving}
-                          class="rounded-md border border-rose-300/30 bg-black/35 p-1.5 text-rose-200 hover:border-rose-300/55"
+                          class="rounded-md border border-red-300/30 bg-black/35 p-1.5 text-red-200 hover:border-red-300/55"
                           title="Eliminar credito"
                         >
                           <svg
@@ -980,7 +992,7 @@ export function CreditsPage() {
 
                     <div class="mt-2 h-2 rounded-full bg-violet-900/35">
                       <div
-                        class="h-full rounded-full bg-linear-to-r from-violet-400 to-fuchsia-300"
+                        class="h-full rounded-full bg-linear-to-r from-violet-400 to-red-300"
                         style={{ width: `${progress}%` }}
                       />
                     </div>
@@ -1031,7 +1043,7 @@ export function CreditsPage() {
                         class={[
                           "grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border bg-black/20 px-3 py-2",
                           installment.isOverdue
-                            ? "border-rose-300/30"
+                            ? "border-red-300/30"
                             : "border-violet-300/15",
                         ].join(" ")}
                       >
@@ -1039,10 +1051,10 @@ export function CreditsPage() {
                           class={[
                             "inline-flex rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]",
                             installment.status === "pagada"
-                              ? "bg-emerald-500/20 text-emerald-200"
+                              ? "bg-teal-500/20 text-teal-200"
                               : installment.isOverdue
-                                ? "bg-rose-500/20 text-rose-200"
-                                : "bg-amber-500/20 text-amber-200",
+                                ? "bg-red-500/20 text-red-200"
+                                : "bg-sky-500/20 text-sky-200",
                           ].join(" ")}
                         >
                           {installment.status === "pagada"
@@ -1053,9 +1065,9 @@ export function CreditsPage() {
                         </span>
 
                         <p class="text-sm text-violet-100">
-                          Cuota {installment.number} - {formatLongDate(installment.date)}
+                          Cuota {installment.number} - {formatCompactDate(installment.date)}
                           {installment.isNext ? (
-                            <span class="ml-2 rounded-full border border-violet-300/35 bg-violet-900/40 px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-violet-100">
+                            <span class="ml-2 rounded-full border border-cyan-300/45 bg-cyan-500/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-cyan-100">
                               Siguiente
                             </span>
                           ) : null}
@@ -1105,7 +1117,7 @@ export function CreditsPage() {
                             {credit.categoryName}
                           </p>
                         </div>
-                        <span class="rounded-full bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-200">
+                        <span class="rounded-full bg-teal-500/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-teal-200">
                           Completado
                         </span>
                       </div>
@@ -1325,7 +1337,7 @@ export function CreditsPage() {
               </label>
 
               {categories.length > 0 && expenseCategories.length === 0 ? (
-                <p class="rounded-lg border border-amber-300/30 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+                <p class="rounded-lg border border-sky-300/30 bg-sky-950/30 px-3 py-2 text-sm text-sky-200">
                   Tienes categorias cargadas, pero ninguna de tipo gasto. Crea
                   una categoria de gasto para asignarla al credito.
                 </p>
@@ -1338,7 +1350,7 @@ export function CreditsPage() {
               ) : null}
 
               {hasMismatch ? (
-                <p class="rounded-lg border border-amber-300/30 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+                <p class="rounded-lg border border-sky-300/30 bg-sky-950/30 px-3 py-2 text-sm text-sky-200">
                   La relacion entre total y cuotas parece inconsistente. Revisa
                   los montos antes de guardar.
                 </p>
@@ -1367,3 +1379,5 @@ export function CreditsPage() {
     </DashboardLayout>
   );
 }
+
+

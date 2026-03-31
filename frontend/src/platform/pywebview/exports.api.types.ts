@@ -1,11 +1,12 @@
 import type { ApiResponse } from "./user.api.types";
 
-export type ExportFormat = "csv" | "pdf";
+export type ExportFormat = "xlsx" | "pdf";
 
 export type ExportSection =
   | "summary"
   | "transactions"
   | "credits"
+  | "bills"
   | "categories"
   | "notes";
 
@@ -27,6 +28,13 @@ export type GenerateExportResult = ApiResponse<{
 }> &
   Partial<ExportFileInfo>;
 
+export type OpenExportFolderResult = ApiResponse<{
+  folder_path?: string;
+  [key: string]: unknown;
+}> & {
+  folder_path?: string;
+};
+
 export type DashboardExportFormat = "png" | "pdf";
 
 export interface DashboardVisualMetrics {
@@ -38,6 +46,10 @@ export interface DashboardVisualMetrics {
   active_credits: number;
   pending_installments: number;
   monthly_due_amount: number;
+  bills_count: number;
+  overdue_bills_count: number;
+  due_soon_bills_count: number;
+  month_bills_amount: number;
   categories_count: number;
 }
 

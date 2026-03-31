@@ -20,8 +20,15 @@ export function TransactionCategoryChart({
   data,
   formatAmount,
 }: TransactionCategoryChartProps) {
+  const useVerticalScroll = data.length > 4;
+
   return (
-    <div class="space-y-2.5">
+    <div
+      class={[
+        "space-y-2.5",
+        useVerticalScroll ? "max-h-[22rem] overflow-y-auto pr-1" : "",
+      ].join(" ")}
+    >
       {data.map((item) => (
         <article
           key={`${item.type}-${item.label}`}
@@ -33,7 +40,7 @@ export function TransactionCategoryChart({
               <p
                 class={[
                   "text-[11px] uppercase tracking-[0.08em]",
-                  item.type === "income" ? "text-emerald-200/95" : "text-rose-200/95",
+                  item.type === "income" ? "text-teal-200/95" : "text-red-200/95",
                 ].join(" ")}
               >
                 {categoryTypeLabel(item.type)}
@@ -52,8 +59,8 @@ export function TransactionCategoryChart({
               class={[
                 "h-full rounded-full",
                 item.type === "income"
-                  ? "bg-linear-to-r from-emerald-400 to-emerald-300"
-                  : "bg-linear-to-r from-rose-400 to-rose-300",
+                  ? "bg-linear-to-r from-teal-400 to-teal-300"
+                  : "bg-linear-to-r from-red-400 to-red-300",
               ].join(" ")}
               style={{ width: `${Math.max(item.share, 3)}%` }}
             />
@@ -63,3 +70,5 @@ export function TransactionCategoryChart({
     </div>
   );
 }
+
+

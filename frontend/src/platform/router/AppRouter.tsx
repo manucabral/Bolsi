@@ -6,9 +6,12 @@ import { RegisterPage } from "../../features/auth/pages/RegisterPage.tsx";
 import { DashboardPage } from "../../features/dashboard/pages/DashboardPage.tsx";
 import { TransactionsPage } from "../../features/dashboard/pages/TransactionsPage.tsx";
 import { CreditsPage } from "../../features/dashboard/pages/CreditsPage.tsx";
+import { BillsPage } from "../../features/dashboard/pages/BillsPage.tsx";
+import { GoalsPage } from "../../features/dashboard/pages/GoalsPage.tsx";
 import { CategoriesPage } from "../../features/dashboard/pages/CategoriesPage.tsx";
 import { NotesPage } from "../../features/dashboard/pages/NotesPage.tsx";
 import { SettingsPage } from "../../features/dashboard/pages/SettingsPage.tsx";
+import { ExportsPage } from "../../features/dashboard/pages/ExportsPage.tsx";
 import { AuthProvider, useAuth } from "../auth/AuthProvider.tsx";
 import { Toaster } from "sonner";
 
@@ -109,6 +112,22 @@ export function AppRouter() {
               }
             />
             <Route
+              path="dashboard/bills"
+              element={
+                <ProtectedOnly>
+                  <BillsPage />
+                </ProtectedOnly>
+              }
+            />
+            <Route
+              path="dashboard/goals"
+              element={
+                <ProtectedOnly>
+                  <GoalsPage />
+                </ProtectedOnly>
+              }
+            />
+            <Route
               path="dashboard/categories"
               element={
                 <ProtectedOnly>
@@ -129,6 +148,14 @@ export function AppRouter() {
               element={
                 <ProtectedOnly>
                   <SettingsPage />
+                </ProtectedOnly>
+              }
+            />
+            <Route
+              path="dashboard/exports"
+              element={
+                <ProtectedOnly>
+                  <ExportsPage />
                 </ProtectedOnly>
               }
             />

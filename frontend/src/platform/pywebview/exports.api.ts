@@ -5,31 +5,67 @@ import type {
   ExportFormat,
   ExportSection,
   GenerateExportResult,
+  OpenExportFolderResult,
 } from "./exports.api.types";
+
+type TransactionPeriodFilter = {
+  year?: number;
+  month?: number;
+  fromDate?: string;
+};
 
 export async function generateExport(
   userId: number,
   section: ExportSection = "summary",
-  exportFormat: ExportFormat = "csv",
+  exportFormat: ExportFormat = "xlsx",
+  periodFilter?: TransactionPeriodFilter,
 ): Promise<GenerateExportResult> {
   const api = await getBolsiApi();
-  return api.exports_generate(userId, section, exportFormat);
+  return api.exports_generate(
+    userId,
+    section,
+    exportFormat,
+    periodFilter?.year,
+    periodFilter?.month,
+    periodFilter?.fromDate,
+  );
 }
 
-export async function exportCsv(
+export async function exportExcel(
   userId: number,
   section: ExportSection = "summary",
+  periodFilter?: TransactionPeriodFilter,
 ): Promise<GenerateExportResult> {
   const api = await getBolsiApi();
-  return api.exports_csv(userId, section);
+  return api.exports_excel(
+    userId,
+    section,
+    periodFilter?.year,
+    periodFilter?.month,
+    periodFilter?.fromDate,
+  );
 }
 
 export async function exportPdf(
   userId: number,
   section: ExportSection = "summary",
+  periodFilter?: TransactionPeriodFilter,
 ): Promise<GenerateExportResult> {
   const api = await getBolsiApi();
-  return api.exports_pdf(userId, section);
+  return api.exports_pdf(
+    userId,
+    section,
+    periodFilter?.year,
+    periodFilter?.month,
+    periodFilter?.fromDate,
+  );
+}
+
+export async function openExportsFolder(
+  userId: number,
+): Promise<OpenExportFolderResult> {
+  const api = await getBolsiApi();
+  return api.exports_open_folder(userId);
 }
 
 export async function exportDashboardChartPng(
@@ -57,6 +93,10 @@ export async function exportDashboardVisualPdf(
     metrics.active_credits,
     metrics.pending_installments,
     metrics.monthly_due_amount,
+    metrics.bills_count,
+    metrics.overdue_bills_count,
+    metrics.due_soon_bills_count,
+    metrics.month_bills_amount,
     metrics.categories_count,
   );
 }

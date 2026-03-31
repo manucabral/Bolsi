@@ -18,7 +18,6 @@ import {
   removeCategoryColor,
   saveCategoryColors,
 } from "../data/categoryColors";
-import { SectionExportActions } from "../components/SectionExportActions";
 import { useKindNoticeToast } from "../../../shared/ui/useToastNotice";
 
 type UiCategory = CategoryItem & {
@@ -455,7 +454,6 @@ export function CategoriesPage() {
 
   return (
     <DashboardLayout
-      sectionTag="Finanzas"
       title="Categorias"
       subtitle="Organiza tus categorias."
     >
@@ -496,12 +494,6 @@ export function CategoriesPage() {
           >
             Nueva categoria
           </button>
-          <SectionExportActions
-            userId={userId}
-            section="categories"
-            disabled={!userId || isLoading || isSaving}
-            onNotice={setNotice}
-          />
         </div>
       </section>
 
@@ -666,7 +658,7 @@ export function CategoriesPage() {
                         type="button"
                         onClick={() => void onDeleteCategory(category.id)}
                         disabled={isSaving}
-                        class="rounded-md border border-rose-300/30 bg-black/25 px-2 py-1 text-xs text-rose-200 hover:border-rose-300/55"
+                        class="rounded-md border border-red-300/30 bg-black/25 px-2 py-1 text-xs text-red-200 hover:border-red-300/55"
                       >
                         Eliminar
                       </button>
@@ -776,3 +768,5 @@ export function CategoriesPage() {
     </DashboardLayout>
   );
 }
+
+

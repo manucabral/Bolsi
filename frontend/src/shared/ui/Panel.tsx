@@ -24,7 +24,12 @@ export function Panel({ title, subtitle, children, showVersionInHeader = true }:
         <div class="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(165,148,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(165,148,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]" />
 
         <div class="relative z-10">
-          <img src="/logo.svg" alt="Bolsi" class="h-10 w-auto" />
+          <div class="flex items-center gap-3">
+            <img src="/logo.svg" alt="Bolsi" class="h-10 w-auto" />
+            <p class="text-lg font-semibold tracking-[-0.02em] text-violet-100 [font-family:'Sora','Segoe_UI',sans-serif]">
+              Bolsi
+            </p>
+          </div>
           <p class="mt-4 max-w-xs text-sm leading-relaxed text-violet-100/90">
             Finanzas simples y privadas.
           </p>
@@ -40,7 +45,11 @@ export function Panel({ title, subtitle, children, showVersionInHeader = true }:
             </p>
             <p class="flex items-center gap-2.5 text-[0.92rem] text-violet-100/90">
               <span class="size-[0.55rem] rounded-full bg-[linear-gradient(120deg,#6f57ff,#d74cff,#50b6ff)] shadow-[0_0_0_4px_rgba(144,112,255,0.2)]" />
-              Exportacion a CSV y PDF.
+              Facturas y vencimientos.
+            </p>
+            <p class="flex items-center gap-2.5 text-[0.92rem] text-violet-100/90">
+              <span class="size-[0.55rem] rounded-full bg-[linear-gradient(120deg,#6f57ff,#d74cff,#50b6ff)] shadow-[0_0_0_4px_rgba(144,112,255,0.2)]" />
+              Exportacion a Excel y PDF.
             </p>
             <p class="flex items-center gap-2.5 text-[0.92rem] text-violet-100/90">
               <span class="size-[0.55rem] rounded-full bg-[linear-gradient(120deg,#6f57ff,#d74cff,#50b6ff)] shadow-[0_0_0_4px_rgba(144,112,255,0.2)]" />

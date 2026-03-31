@@ -145,15 +145,20 @@ export function CreditScheduleChart({ data }: CreditScheduleChartProps) {
 
   return (
     <div class="w-full overflow-hidden">
+      <div class="mb-1 flex items-center justify-between text-[11px] font-medium text-violet-300/90">
+        <span>Izq: Cantidad</span>
+        <span>Der: Monto $</span>
+      </div>
       <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-violet-200/90">
         <span class="inline-flex items-center gap-1 rounded-full border border-indigo-300/35 bg-indigo-500/15 px-2 py-0.5">
           <span class="size-1.5 rounded-full bg-indigo-300" /> Monto mensual
         </span>
-        <span class="inline-flex items-center gap-1 rounded-full border border-fuchsia-300/35 bg-fuchsia-500/15 px-2 py-0.5">
-          <span class="size-1.5 rounded-full bg-fuchsia-300" /> Cantidad de cuotas
+        <span class="inline-flex items-center gap-1 rounded-full border border-red-300/35 bg-red-500/15 px-2 py-0.5">
+          <span class="size-1.5 rounded-full bg-red-300" /> Cantidad de cuotas
         </span>
       </div>
       <div ref={containerRef} class="h-[260px] w-full" />
     </div>
   );
 }
+

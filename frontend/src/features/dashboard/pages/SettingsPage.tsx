@@ -2,11 +2,19 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
   backupDatabase,
+  getNotificationSettings,
   listDatabaseBackups,
   restoreDatabase,
+  updateNotificationSettings,
 } from "../../../platform/pywebview/settings.api";
-import type { BackupItem } from "../../../platform/pywebview/settings.api.types";
+import { useAuth } from "../../../platform/auth/AuthProvider";
+import type {
+  BackupItem,
+  NotificationPreferences,
+} from "../../../platform/pywebview/settings.api.types";
 import { useKindNoticeToast } from "../../../shared/ui/useToastNotice";
+
+const DAY_OPTIONS = [1, 3, 7] as const;
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("es-AR", {
@@ -35,11 +43,18 @@ function toUiErrorMessage(error: unknown, fallback: string) {
 }
 
 export function SettingsPage() {
+  const { session } = useAuth();
+  const userId = session?.user_id ?? 0;
+
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [isSavingNotifications, setIsSavingNotifications] = useState(false);
   const [backups, setBackups] = useState<BackupItem[]>([]);
   const [selectedBackup, setSelectedBackup] = useState("");
+  const [notificationSettings, setNotificationSettings] =
+    useState<NotificationPreferences | null>(null);
   const [notice, setNotice] = useState<{
     kind: "success" | "error";
     message: string;
@@ -74,19 +89,46 @@ export function SettingsPage() {
     }
   }
 
+  async function reloadNotificationSettings() {
+    if (!userId) {
+      setNotificationSettings(null);
+      return;
+    }
+
+    const response = await getNotificationSettings(userId);
+    if (!response.ok) {
+      setNotificationSettings(null);
+      setNotice({
+        kind: "error",
+        message: response.error ?? response.message,
+      });
+      return;
+    }
+
+    const settings = response.data?.notifications ?? response.notifications;
+    if (!settings) {
+      setNotificationSettings(null);
+      return;
+    }
+
+    setNotificationSettings(settings);
+  }
+
   useEffect(() => {
     let isMounted = true;
 
     async function loadData() {
       setIsLoading(true);
+      setIsLoadingNotifications(true);
       setNotice(null);
 
       try {
-        await reloadBackups();
+        await Promise.all([reloadBackups(), reloadNotificationSettings()]);
       } catch (error) {
         if (!isMounted) return;
         setBackups([]);
         setSelectedBackup("");
+        setNotificationSettings(null);
         setNotice({
           kind: "error",
           message: toUiErrorMessage(error, "No se pudieron cargar los backups."),
@@ -94,6 +136,7 @@ export function SettingsPage() {
       } finally {
         if (isMounted) {
           setIsLoading(false);
+          setIsLoadingNotifications(false);
         }
       }
     }
@@ -103,7 +146,49 @@ export function SettingsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [userId]);
+
+  async function handleSaveNotificationSettings() {
+    if (!notificationSettings || !userId) {
+      return;
+    }
+
+    setIsSavingNotifications(true);
+    setNotice(null);
+
+    try {
+      const response = await updateNotificationSettings(
+        userId,
+        notificationSettings.bills_enabled,
+        notificationSettings.bills_days_before,
+        notificationSettings.credits_enabled,
+        notificationSettings.credits_days_before,
+        notificationSettings.summary_on_open_enabled,
+      );
+
+      if (!response.ok) {
+        setNotice({
+          kind: "error",
+          message: response.error ?? response.message,
+        });
+        return;
+      }
+
+      const updated = response.data?.notifications ?? response.notifications;
+      if (updated) {
+        setNotificationSettings(updated);
+      }
+
+      setNotice({ kind: "success", message: response.message });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        message: toUiErrorMessage(error, "No se pudieron guardar las notificaciones."),
+      });
+    } finally {
+      setIsSavingNotifications(false);
+    }
+  }
 
   async function handleCreateBackup() {
     setIsCreatingBackup(true);
@@ -171,10 +256,143 @@ export function SettingsPage() {
 
   return (
     <DashboardLayout
-      sectionTag="Sistema"
       title="Configuracion"
       subtitle="Gestion de copias de seguridad de la base local."
     >
+      <section class="mb-3 rounded-2xl border border-violet-300/25 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
+        <header class="border-b border-violet-300/20 pb-3">
+          <h3 class="text-sm font-semibold text-violet-100">Notificaciones</h3>
+          <p class="mt-1 text-xs text-violet-300/85">
+            Al iniciar la app, alertar sobre proximos vencimientos.
+          </p>
+        </header>
+
+        {isLoadingNotifications ? (
+          <p class="mt-3 rounded-lg bg-violet-950/25 px-3 py-5 text-center text-sm text-violet-200/75">
+            Cargando preferencias...
+          </p>
+        ) : !notificationSettings ? (
+          <p class="mt-3 rounded-lg bg-violet-950/25 px-3 py-5 text-center text-sm text-violet-200/75">
+            No se pudieron cargar las preferencias de notificaciones.
+          </p>
+        ) : (
+          <div class="mt-3 grid gap-3">
+            <article class="rounded-xl border border-violet-300/20 bg-violet-950/15 p-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-sm font-medium text-violet-100">Facturas por vencer</p>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.bills_enabled}
+                  onInput={(event) =>
+                    setNotificationSettings((previous) =>
+                      previous
+                        ? { ...previous, bills_enabled: event.currentTarget.checked }
+                        : previous,
+                    )
+                  }
+                  class="h-4 w-4 cursor-pointer accent-violet-500"
+                />
+              </div>
+
+              <label class="mt-2 flex items-center gap-2 text-xs text-violet-300/85">
+                Dias de anticipacion
+                <select
+                  value={String(notificationSettings.bills_days_before)}
+                  disabled={!notificationSettings.bills_enabled}
+                  onChange={(event) => {
+                    const value = Number(event.currentTarget.value);
+                    setNotificationSettings((previous) =>
+                      previous ? { ...previous, bills_days_before: value } : previous,
+                    );
+                  }}
+                  class="rounded-md border border-violet-300/30 bg-black/30 px-2 py-1 text-xs text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {DAY_OPTIONS.map((day) => (
+                    <option key={`bills-day-${day}`} value={String(day)}>
+                      {day} dia{day === 1 ? "" : "s"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </article>
+
+            <article class="rounded-xl border border-violet-300/20 bg-violet-950/15 p-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-sm font-medium text-violet-100">Cuotas por vencer</p>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.credits_enabled}
+                  onInput={(event) =>
+                    setNotificationSettings((previous) =>
+                      previous
+                        ? { ...previous, credits_enabled: event.currentTarget.checked }
+                        : previous,
+                    )
+                  }
+                  class="h-4 w-4 cursor-pointer accent-violet-500"
+                />
+              </div>
+
+              <label class="mt-2 flex items-center gap-2 text-xs text-violet-300/85">
+                Dias de anticipacion
+                <select
+                  value={String(notificationSettings.credits_days_before)}
+                  disabled={!notificationSettings.credits_enabled}
+                  onChange={(event) => {
+                    const value = Number(event.currentTarget.value);
+                    setNotificationSettings((previous) =>
+                      previous ? { ...previous, credits_days_before: value } : previous,
+                    );
+                  }}
+                  class="rounded-md border border-violet-300/30 bg-black/30 px-2 py-1 text-xs text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {DAY_OPTIONS.map((day) => (
+                    <option key={`credits-day-${day}`} value={String(day)}>
+                      {day} dia{day === 1 ? "" : "s"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </article>
+
+            <article class="rounded-xl border border-violet-300/20 bg-violet-950/15 p-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-sm font-medium text-violet-100">Resumen al abrir</p>
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.summary_on_open_enabled}
+                  onInput={(event) =>
+                    setNotificationSettings((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            summary_on_open_enabled: event.currentTarget.checked,
+                          }
+                        : previous,
+                    )
+                  }
+                  class="h-4 w-4 cursor-pointer accent-violet-500"
+                />
+              </div>
+              <p class="mt-2 text-xs text-violet-300/85">
+                Muestra un resumen del mes despues de iniciar sesion.
+              </p>
+            </article>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => void handleSaveNotificationSettings()}
+                disabled={isSavingNotifications}
+                class="rounded-lg border border-violet-300/35 bg-violet-900/50 px-3 py-2 text-sm font-semibold text-violet-100 transition hover:bg-violet-800/60 disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {isSavingNotifications ? "Guardando..." : "Guardar notificaciones"}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       <section class="grid gap-3 lg:grid-cols-[1fr_1.35fr]">
         <article class="rounded-2xl border border-violet-300/25 bg-black/35 p-4 shadow-[0_10px_20px_rgba(8,7,24,0.35)]">
           <h3 class="text-sm font-semibold text-violet-100">Base de datos</h3>
@@ -216,7 +434,7 @@ export function SettingsPage() {
               type="button"
               onClick={() => void handleRestoreBackup()}
               disabled={!selectedBackup || isCreatingBackup || isRestoringBackup}
-              class="rounded-lg border border-rose-300/35 bg-rose-900/35 px-3 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-800/45 disabled:cursor-not-allowed disabled:opacity-55"
+              class="rounded-lg border border-red-300/35 bg-red-900/35 px-3 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-800/45 disabled:cursor-not-allowed disabled:opacity-55"
             >
               {isRestoringBackup ? "Restaurando..." : "Restaurar backup"}
             </button>
@@ -279,3 +497,5 @@ export function SettingsPage() {
     </DashboardLayout>
   );
 }
+
+

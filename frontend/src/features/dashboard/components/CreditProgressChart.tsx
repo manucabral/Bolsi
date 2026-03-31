@@ -81,24 +81,24 @@ export function CreditProgressChart({
         </div>
 
         <div class="grid gap-2">
-          <article class="rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-3 py-2">
-            <p class="text-[11px] uppercase tracking-[0.08em] text-emerald-200/90">
+          <article class="rounded-lg border border-teal-300/30 bg-teal-500/10 px-3 py-2">
+            <p class="text-[11px] uppercase tracking-[0.08em] text-teal-200/90">
               Pagado
             </p>
-            <p class="mt-1 text-sm font-semibold text-emerald-200">
+            <p class="mt-1 text-sm font-semibold text-teal-200">
               {formatAmount(paidAmount)}
             </p>
-            <p class="text-xs text-emerald-100/90">{paidInstallments} cuotas</p>
+            <p class="text-xs text-teal-100/90">{paidInstallments} cuotas</p>
           </article>
 
-          <article class="rounded-lg border border-amber-300/30 bg-amber-500/10 px-3 py-2">
-            <p class="text-[11px] uppercase tracking-[0.08em] text-amber-200/90">
+          <article class="rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2">
+            <p class="text-[11px] uppercase tracking-[0.08em] text-sky-200/90">
               Pendiente
             </p>
-            <p class="mt-1 text-sm font-semibold text-amber-200">
+            <p class="mt-1 text-sm font-semibold text-sky-200">
               {formatAmount(pendingAmount)}
             </p>
-            <p class="text-xs text-amber-100/90">{pendingInstallments} cuotas</p>
+            <p class="text-xs text-sky-100/90">{pendingInstallments} cuotas</p>
           </article>
 
           <article class="rounded-lg border border-violet-300/20 bg-violet-950/20 px-3 py-2">
@@ -114,3 +114,4 @@ export function CreditProgressChart({
     </div>
   );
 }
+

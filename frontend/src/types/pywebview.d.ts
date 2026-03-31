@@ -33,15 +33,35 @@ import type {
 import type {
   DashboardChartExportResult,
   ExportFormat,
+  OpenExportFolderResult,
   ExportSection,
   GenerateExportResult,
 } from "../platform/pywebview/exports.api.types";
 import type { GetAppVersionResult } from "../platform/pywebview/app.api.types";
 import type {
   BackupDatabaseResult,
+  GetNotificationSettingsResult,
   ListBackupsResult,
   RestoreDatabaseResult,
+  RunStartupAlertsResult,
+  UpdateNotificationSettingsResult,
 } from "../platform/pywebview/settings.api.types";
+import type {
+  CreateBillResult,
+  DeleteBillResult,
+  ListBillsResult,
+  ListMonthBillsResult,
+  MarkBillPaidResult,
+  MarkBillUnpaidResult,
+  UpdateBillResult,
+} from "../platform/pywebview/bills.api.types";
+import type {
+  AddSavingsEntryResult,
+  CreateSavingsGoalResult,
+  DeleteSavingsGoalResult,
+  ListSavingsGoalsResult,
+  UpdateSavingsGoalTargetResult,
+} from "../platform/pywebview/savings.api.types";
 
 export {};
 
@@ -148,15 +168,25 @@ declare global {
           user_id: number,
           section?: ExportSection,
           export_format?: ExportFormat,
+          year?: number,
+          month?: number,
+          from_date?: string,
         ): Promise<GenerateExportResult>;
-        exports_csv(
+        exports_excel(
           user_id: number,
           section?: ExportSection,
+          year?: number,
+          month?: number,
+          from_date?: string,
         ): Promise<GenerateExportResult>;
         exports_pdf(
           user_id: number,
           section?: ExportSection,
+          year?: number,
+          month?: number,
+          from_date?: string,
         ): Promise<GenerateExportResult>;
+        exports_open_folder(user_id: number): Promise<OpenExportFolderResult>;
         exports_dashboard_chart_png(
           user_id: number,
           image_data_url: string,
@@ -172,6 +202,10 @@ declare global {
           active_credits: number,
           pending_installments: number,
           monthly_due_amount: number,
+          bills_count: number,
+          overdue_bills_count: number,
+          due_soon_bills_count: number,
+          month_bills_amount: number,
           categories_count: number,
         ): Promise<DashboardChartExportResult>;
         app_version(): Promise<GetAppVersionResult>;
@@ -180,6 +214,79 @@ declare global {
         settings_restore_database(
           backup_file_name: string,
         ): Promise<RestoreDatabaseResult>;
+        settings_get_notifications(
+          user_id: number,
+        ): Promise<GetNotificationSettingsResult>;
+        settings_update_notifications(
+          user_id: number,
+          bills_enabled: boolean,
+          bills_days_before: number,
+          credits_enabled: boolean,
+          credits_days_before: number,
+          summary_on_open_enabled: boolean,
+        ): Promise<UpdateNotificationSettingsResult>;
+        settings_run_startup_alerts(
+          user_id: number,
+        ): Promise<RunStartupAlertsResult>;
+        bills_list(user_id: number): Promise<ListBillsResult>;
+        bills_list_month(
+          user_id: number,
+          year?: number,
+          month?: number,
+        ): Promise<ListMonthBillsResult>;
+        bills_create(
+          user_id: number,
+          name: string,
+          amount: number,
+          due_date: string,
+          category_id?: number,
+          notes?: string,
+        ): Promise<CreateBillResult>;
+        bills_update(
+          user_id: number,
+          bill_id: number,
+          name: string,
+          amount: number,
+          due_date: string,
+          category_id?: number,
+          notes?: string,
+        ): Promise<UpdateBillResult>;
+        bills_mark_paid(
+          user_id: number,
+          bill_id: number,
+          paid_date?: string,
+          paid_amount?: number,
+        ): Promise<MarkBillPaidResult>;
+        bills_mark_unpaid(
+          user_id: number,
+          bill_id: number,
+        ): Promise<MarkBillUnpaidResult>;
+        bills_delete(user_id: number, bill_id: number): Promise<DeleteBillResult>;
+        savings_list_goals(user_id: number): Promise<ListSavingsGoalsResult>;
+        savings_create_goal(
+          user_id: number,
+          name: string,
+          target: number,
+          deadline?: string,
+          color?: string,
+          affects_balance?: boolean,
+        ): Promise<CreateSavingsGoalResult>;
+        savings_add_entry(
+          user_id: number,
+          goal_id: number,
+          amount: number,
+          note?: string,
+          entry_date?: string,
+        ): Promise<AddSavingsEntryResult>;
+        savings_update_goal_target(
+          user_id: number,
+          goal_id: number,
+          target: number,
+        ): Promise<UpdateSavingsGoalTargetResult>;
+        savings_delete_goal(
+          user_id: number,
+          goal_id: number,
+        ): Promise<DeleteSavingsGoalResult>;
       };
     };
   }

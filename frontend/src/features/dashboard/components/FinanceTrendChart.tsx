@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   LineSeries,
   ColorType,
@@ -6,6 +6,7 @@ import {
   type IChartApi,
   type ISeriesApi,
   type LineData,
+  type MouseEventParams,
   type Time,
 } from "lightweight-charts";
 
@@ -20,6 +21,20 @@ type FinanceTrendChartProps = {
   data: FinanceTrendPoint[];
   onCaptureReady?: (capture: (() => string | null) | null) => void;
 };
+
+type HoverValues = {
+  income: number;
+  expense: number;
+  balance: number;
+};
+
+function toSeriesNumber(value: unknown): number | null {
+  if (!value || typeof value !== "object") return null;
+  if (!("value" in value)) return null;
+
+  const numeric = Number((value as { value: unknown }).value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
 
 function toLineData(
   data: FinanceTrendPoint[],
@@ -40,6 +55,17 @@ export function FinanceTrendChart({
   const incomeSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const expenseSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const balanceSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const [hoverValues, setHoverValues] = useState<HoverValues | null>(null);
+
+  const money = useMemo(
+    () =>
+      new Intl.NumberFormat("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        maximumFractionDigits: 0,
+      }),
+    [],
+  );
 
   const lineData = useMemo(
     () => ({
@@ -90,27 +116,42 @@ export function FinanceTrendChart({
     const incomeSeries = chart.addSeries(LineSeries, {
       color: "#34d399",
       lineWidth: 2,
-      title: "Ingresos",
       priceLineVisible: false,
-      lastValueVisible: true,
+      lastValueVisible: false,
     });
 
     const expenseSeries = chart.addSeries(LineSeries, {
       color: "#fb7185",
       lineWidth: 2,
-      title: "Gastos",
       priceLineVisible: false,
-      lastValueVisible: true,
+      lastValueVisible: false,
     });
 
     const balanceSeries = chart.addSeries(LineSeries, {
       color: "#60a5fa",
       lineWidth: 2,
       lineStyle: 2,
-      title: "Balance",
       priceLineVisible: false,
-      lastValueVisible: true,
+      lastValueVisible: false,
     });
+
+    const handleCrosshairMove = (param: MouseEventParams<Time>) => {
+      if (!param.time || !param.point) {
+        setHoverValues(null);
+        return;
+      }
+
+      const income =
+        toSeriesNumber(param.seriesData.get(incomeSeries)) ?? 0;
+      const expense =
+        toSeriesNumber(param.seriesData.get(expenseSeries)) ?? 0;
+      const balance =
+        toSeriesNumber(param.seriesData.get(balanceSeries)) ?? 0;
+
+      setHoverValues({ income, expense, balance });
+    };
+
+    chart.subscribeCrosshairMove(handleCrosshairMove);
 
     chartRef.current = chart;
     incomeSeriesRef.current = incomeSeries;
@@ -128,11 +169,13 @@ export function FinanceTrendChart({
 
     return () => {
       resizeObserver.disconnect();
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
       chartRef.current = null;
       incomeSeriesRef.current = null;
       expenseSeriesRef.current = null;
       balanceSeriesRef.current = null;
+      setHoverValues(null);
     };
   }, []);
 
@@ -163,18 +206,22 @@ export function FinanceTrendChart({
 
   return (
     <div class="w-full overflow-hidden">
-      <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-violet-200/90">
-        <span class="inline-flex items-center gap-1 rounded-full border border-emerald-300/35 bg-emerald-500/15 px-2 py-0.5">
-          <span class="size-1.5 rounded-full bg-emerald-300" /> Ingresos
-        </span>
-        <span class="inline-flex items-center gap-1 rounded-full border border-rose-300/35 bg-rose-500/15 px-2 py-0.5">
-          <span class="size-1.5 rounded-full bg-rose-300" /> Gastos
-        </span>
-        <span class="inline-flex items-center gap-1 rounded-full border border-sky-300/35 bg-sky-500/15 px-2 py-0.5">
-          <span class="size-1.5 rounded-full bg-sky-300" /> Balance
-        </span>
-      </div>
+      {hoverValues ? (
+        <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-violet-200/90">
+          <span class="inline-flex items-center gap-1 rounded-full border border-teal-300/35 bg-teal-500/15 px-2 py-0.5">
+            <span class="size-1.5 rounded-full bg-teal-300" /> Ingresos {money.format(hoverValues.income)}
+          </span>
+          <span class="inline-flex items-center gap-1 rounded-full border border-red-300/35 bg-red-500/15 px-2 py-0.5">
+            <span class="size-1.5 rounded-full bg-red-300" /> Gastos {money.format(hoverValues.expense)}
+          </span>
+          <span class="inline-flex items-center gap-1 rounded-full border border-sky-300/35 bg-sky-500/15 px-2 py-0.5">
+            <span class="size-1.5 rounded-full bg-sky-300" /> Balance {money.format(hoverValues.balance)}
+          </span>
+        </div>
+      ) : null}
       <div ref={containerRef} class="h-[280px] w-full" />
     </div>
   );
 }
+
+

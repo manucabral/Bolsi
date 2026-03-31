@@ -10,6 +10,7 @@ export function MonthlyCompositionChart({
   formatAmount,
 }: MonthlyCompositionChartProps) {
   const total = income + expense;
+  const balance = income - expense;
   const incomeShare = total > 0 ? income / total : 0;
   const expenseShare = total > 0 ? expense / total : 0;
   const incomePercent = Math.round(incomeShare * 100);
@@ -42,36 +43,41 @@ export function MonthlyCompositionChart({
           >
             <div class="absolute inset-[18%] grid place-items-center rounded-full bg-[#151428] text-center">
               <p class="text-[10px] uppercase tracking-[0.08em] text-violet-300/85">
-                Total
+                Balance
               </p>
-              <p class="mt-0.5 text-sm font-semibold text-violet-100">
-                {formatAmount(total)}
+              <p
+                class={[
+                  "mt-0.5 text-sm font-semibold",
+                  balance < 0 ? "text-red-300" : "text-teal-300",
+                ].join(" ")}
+              >
+                {formatAmount(balance)}
               </p>
             </div>
           </div>
         </div>
 
         <div class="grid gap-2">
-          <article class="rounded-lg border border-emerald-300/25 bg-emerald-500/10 px-3 py-2">
+          <article class="rounded-lg border border-teal-300/25 bg-teal-500/10 px-3 py-2">
             <div class="flex items-center justify-between gap-2">
-              <p class="text-[11px] uppercase tracking-[0.08em] text-emerald-200/90">
+              <p class="text-[11px] uppercase tracking-[0.08em] text-teal-200/90">
                 Ingresos
               </p>
-              <p class="text-xs font-semibold text-emerald-100">{incomePercent}%</p>
+              <p class="text-xs font-semibold text-teal-100">{incomePercent}%</p>
             </div>
-            <p class="mt-1 text-sm font-semibold text-emerald-200">
+            <p class="mt-1 text-sm font-semibold text-teal-200">
               {formatAmount(income)}
             </p>
           </article>
 
-          <article class="rounded-lg border border-rose-300/25 bg-rose-500/10 px-3 py-2">
+          <article class="rounded-lg border border-red-300/25 bg-red-500/10 px-3 py-2">
             <div class="flex items-center justify-between gap-2">
-              <p class="text-[11px] uppercase tracking-[0.08em] text-rose-200/90">
+              <p class="text-[11px] uppercase tracking-[0.08em] text-red-200/90">
                 Gastos
               </p>
-              <p class="text-xs font-semibold text-rose-100">{expensePercent}%</p>
+              <p class="text-xs font-semibold text-red-100">{expensePercent}%</p>
             </div>
-            <p class="mt-1 text-sm font-semibold text-rose-200">
+            <p class="mt-1 text-sm font-semibold text-red-200">
               {formatAmount(expense)}
             </p>
           </article>
@@ -80,3 +86,5 @@ export function MonthlyCompositionChart({
     </div>
   );
 }
+
+
