@@ -13,6 +13,12 @@ from .base import DomainApi
 class CreditsApi(DomainApi):
     """Handles credits-related operations."""
 
+    def _normalize_description(self, description: str) -> str:
+        trimmed = description.strip()
+        if not trimmed:
+            return ""
+        return f"{trimmed[0].upper()}{trimmed[1:]}"
+
     def _normalize_paid_installments(
         self,
         paid_installments: int,
@@ -178,7 +184,7 @@ class CreditsApi(DomainApi):
         if user_error:
             return user_error
 
-        description = description.strip()
+        description = self._normalize_description(description)
         if not description:
             return self._error("La descripción del crédito es obligatoria")
 
@@ -305,7 +311,7 @@ class CreditsApi(DomainApi):
         if credit_id <= 0:
             return self._error("El credit_id debe ser mayor a 0")
 
-        description = description.strip()
+        description = self._normalize_description(description)
         if not description:
             return self._error("La descripción del crédito es obligatoria")
 

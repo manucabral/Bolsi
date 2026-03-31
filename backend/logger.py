@@ -5,6 +5,7 @@ Logger module.
 import logging
 import logging.handlers
 import pathlib
+import sys
 import typing
 
 from .constants import config
@@ -12,7 +13,7 @@ from .constants import config
 try:
     config.logs_dir.mkdir(exist_ok=True, parents=True)
 except OSError as exc:
-    print(f"Error creating log directory: {exc}")
+    sys.stderr.write(f"Error creating log directory: {exc}\n")
 
 _LOG_FILENAME = "app.log"
 
@@ -40,17 +41,24 @@ def _configure_root(
     max_bytes = 5 * 1024 * 1024
     backup_count = 3
     encoding = "utf-8"
-    _file_handler = logging.handlers.RotatingFileHandler(
-        str(log_path),
-        maxBytes=max_bytes,
-        backupCount=backup_count,
-        encoding=encoding,
-    )
-    _file_handler.setLevel(level)
-    _file_handler.setFormatter(_format)
-    root.addHandler(_file_handler)
-    _logger = logging.getLogger(config.logs_default_name)
-    _logger.info("Initialized at %s", log_path)
+    try:
+        _file_handler = logging.handlers.RotatingFileHandler(
+            str(log_path),
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding=encoding,
+        )
+        _file_handler.setLevel(level)
+        _file_handler.setFormatter(_format)
+        root.addHandler(_file_handler)
+        _logger = logging.getLogger(config.logs_default_name)
+        _logger.info("Initialized at %s", log_path)
+    except OSError as exc:
+        root.warning(
+            "File logging disabled, could not initialize handler at %s: %s",
+            log_path,
+            exc,
+        )
 
 
 _configure_root()

@@ -2,11 +2,14 @@
 
 import base64
 import binascii
-import csv
+import os
 import sqlite3
-from datetime import datetime
-from io import BytesIO, StringIO
+import subprocess
+import sys
+from datetime import date, datetime
+from io import BytesIO
 from pathlib import Path
+from typing import Optional
 
 from ..constants import (
     EXPORT_ALLOWED_FORMATS,
@@ -20,7 +23,169 @@ from .base import DomainApi
 
 
 class ExportsApi(DomainApi):
-    """Handles export generation for CSV/PDF reports."""
+    """Handles export generation for Excel/PDF reports."""
+
+    def _normalize_bills_export_table(
+        self,
+        headers: list[str],
+        rows: list[list[object]],
+    ) -> tuple[list[str], list[list[object]]]:
+        normalized_headers = [str(header).strip().lower() for header in headers]
+        legacy_markers = {
+            "id",
+            "name",
+            "amount",
+            "paid_amount",
+            "remaining_amount",
+            "due_date",
+            "status",
+            "category_id",
+            "category_name",
+            "notes",
+            "paid_at",
+            "created_at",
+            "payment_transaction_id",
+        }
+
+        if not any(marker in normalized_headers for marker in legacy_markers):
+            return headers, rows
+
+        index_by_header = {
+            normalized: idx for idx, normalized in enumerate(normalized_headers)
+        }
+
+        def _pick_value(row: list[object], keys: tuple[str, ...]) -> object:
+            for key in keys:
+                idx = index_by_header.get(key)
+                if idx is None:
+                    continue
+                if idx >= len(row):
+                    continue
+                return row[idx]
+            return ""
+
+        normalized_rows: list[list[object]] = []
+        for row in rows:
+            name = _pick_value(row, ("name", "nombre"))
+            amount = _pick_value(row, ("amount", "monto"))
+            paid_amount = _pick_value(row, ("paid_amount", "abonado"))
+            remaining_amount = _pick_value(row, ("remaining_amount", "restante"))
+            due_date = _pick_value(row, ("due_date", "vencimiento"))
+            status = _pick_value(row, ("status", "estado"))
+            category_name = _pick_value(
+                row,
+                ("category_name", "categoría", "categoria"),
+            )
+            paid_at = _pick_value(row, ("paid_at", "pagada en", "pagada_en"))
+            notes = _pick_value(row, ("notes", "notas"))
+
+            normalized_rows.append(
+                [
+                    name,
+                    self._format_local_amount(amount),
+                    self._format_local_amount(paid_amount),
+                    self._format_local_amount(remaining_amount),
+                    self._format_local_date(due_date),
+                    self._label_bill_status(status),
+                    category_name,
+                    self._format_local_datetime(paid_at),
+                    notes,
+                ]
+            )
+
+        normalized_display_headers = [
+            "Nombre",
+            "Monto total",
+            "Abonado",
+            "Restante",
+            "Vencimiento",
+            "Estado",
+            "Categoría",
+            "Pagada en",
+            "Notas",
+        ]
+        return normalized_display_headers, normalized_rows
+
+    def _format_local_integer(self, value: object) -> str:
+        try:
+            integer = int(float(str(value)))
+        except (TypeError, ValueError):
+            return str(value)
+        return f"{integer:,}".replace(",", ".")
+
+    def _format_local_amount(self, value: object) -> str:
+        try:
+            amount = float(str(value))
+        except (TypeError, ValueError):
+            return str(value)
+
+        formatted = f"{amount:,.2f}"
+        formatted = formatted.replace(",", "_").replace(".", ",").replace("_", ".")
+        return f"$ {formatted}"
+
+    def _format_local_date(self, value: object) -> str:
+        text = str(value).strip()
+        if not text:
+            return ""
+
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                return datetime.strptime(text, fmt).strftime("%d/%m/%Y")
+            except ValueError:
+                continue
+
+        return text
+
+    def _format_local_datetime(self, value: object) -> str:
+        text = str(value).strip()
+        if not text:
+            return ""
+
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+        ):
+            try:
+                return datetime.strptime(text, fmt).strftime("%d/%m/%Y %H:%M")
+            except ValueError:
+                continue
+
+        if len(text) >= 10:
+            try:
+                parsed_date = datetime.strptime(text[:10], "%Y-%m-%d")
+                return parsed_date.strftime("%d/%m/%Y")
+            except ValueError:
+                pass
+
+        return text
+
+    def _label_transaction_type(self, value: object) -> str:
+        normalized = str(value).strip().lower()
+        if normalized == "income":
+            return "Ingreso"
+        if normalized == "expense":
+            return "Gasto"
+        return str(value)
+
+    def _label_category_type(self, value: object) -> str:
+        normalized = str(value).strip().lower()
+        if normalized == "income":
+            return "Ingreso"
+        if normalized == "expense":
+            return "Gasto"
+        return str(value)
+
+    def _label_bill_status(self, value: object) -> str:
+        normalized = str(value).strip().lower()
+        if normalized == "pending":
+            return "Pendiente"
+        if normalized == "paid":
+            return "Pagada"
+        if normalized == "overdue":
+            return "Vencida"
+        return str(value)
 
     def _validate_user(self, user_id: int) -> JsonDict | None:
         if user_id <= 0:
@@ -84,25 +249,71 @@ class ExportsApi(DomainApi):
 
         return image_bytes
 
-    def _fetch_transactions(self, user_id: int) -> list[JsonDict]:
+    def _fetch_transactions(
+        self,
+        user_id: int,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        from_date: Optional[str] = None,
+    ) -> list[JsonDict]:
         cur = self.conn.cursor()
-        cur.execute(
-            """
-            SELECT
-                t.id,
-                t.date,
-                t.type,
-                t.amount,
-                t.description,
-                t.credit_id,
-                c.name AS category_name
-            FROM transactions t
-            LEFT JOIN categories c ON c.id = t.category_id
-            WHERE t.user_id = ?
-            ORDER BY t.date DESC, t.id DESC
-            """,
-            (user_id,),
-        )
+        if from_date is not None:
+            cur.execute(
+                """
+                SELECT
+                    t.id,
+                    t.date,
+                    t.type,
+                    t.amount,
+                    t.description,
+                    t.credit_id,
+                    c.name AS category_name
+                FROM transactions t
+                LEFT JOIN categories c ON c.id = t.category_id
+                WHERE t.user_id = ?
+                  AND date(t.date) >= date(?)
+                ORDER BY t.date DESC, t.id DESC
+                """,
+                (user_id, from_date),
+            )
+        elif year is not None and month is not None:
+            cur.execute(
+                """
+                SELECT
+                    t.id,
+                    t.date,
+                    t.type,
+                    t.amount,
+                    t.description,
+                    t.credit_id,
+                    c.name AS category_name
+                FROM transactions t
+                LEFT JOIN categories c ON c.id = t.category_id
+                WHERE t.user_id = ?
+                  AND strftime('%Y', t.date) = ?
+                  AND strftime('%m', t.date) = ?
+                ORDER BY t.date DESC, t.id DESC
+                """,
+                (user_id, str(year), f"{month:02d}"),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT
+                    t.id,
+                    t.date,
+                    t.type,
+                    t.amount,
+                    t.description,
+                    t.credit_id,
+                    c.name AS category_name
+                FROM transactions t
+                LEFT JOIN categories c ON c.id = t.category_id
+                WHERE t.user_id = ?
+                ORDER BY t.date DESC, t.id DESC
+                """,
+                (user_id,),
+            )
 
         return [
             {
@@ -215,6 +426,47 @@ class ExportsApi(DomainApi):
             for row in cur.fetchall()
         ]
 
+    def _fetch_bills(self, user_id: int) -> list[JsonDict]:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                b.id,
+                b.name,
+                b.amount,
+                COALESCE(b.paid_amount, 0) AS paid_amount,
+                (b.amount - COALESCE(b.paid_amount, 0)) AS remaining_amount,
+                b.due_date,
+                b.status,
+                c.name AS category_name,
+                b.notes,
+                b.paid_at,
+                b.created_at
+            FROM bills b
+            LEFT JOIN categories c ON c.id = b.category_id
+            WHERE b.user_id = ?
+            ORDER BY date(b.due_date) ASC, b.id ASC
+            """,
+            (user_id,),
+        )
+
+        return [
+            {
+                "id": int(row["id"]),
+                "name": row["name"],
+                "amount": float(row["amount"]),
+                "paid_amount": float(row["paid_amount"]),
+                "remaining_amount": max(float(row["remaining_amount"]), 0.0),
+                "due_date": row["due_date"],
+                "status": row["status"],
+                "category_name": row["category_name"] or "Sin categoría",
+                "notes": row["notes"] or "",
+                "paid_at": row["paid_at"] or "",
+                "created_at": row["created_at"],
+            }
+            for row in cur.fetchall()
+        ]
+
     def _fetch_summary(self, user_id: int) -> list[JsonDict]:
         cur = self.conn.cursor()
 
@@ -252,6 +504,30 @@ class ExportsApi(DomainApi):
         cur.execute(
             """
             SELECT
+                COUNT(*) AS bills_count,
+                COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_bills_count,
+                COALESCE(SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END), 0) AS overdue_bills_count,
+                COALESCE(SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END), 0) AS paid_bills_count,
+                COALESCE(
+                    SUM(
+                        CASE
+                            WHEN status IN ('pending', 'overdue')
+                            THEN (amount - COALESCE(paid_amount, 0))
+                            ELSE 0
+                        END
+                    ),
+                    0
+                ) AS open_bills_amount
+            FROM bills
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+        bills_row = cur.fetchone()
+
+        cur.execute(
+            """
+            SELECT
                 COALESCE(c.name, 'Sin categoría') AS category_name,
                 COALESCE(SUM(t.amount), 0) AS total
             FROM transactions t
@@ -269,9 +545,13 @@ class ExportsApi(DomainApi):
         income_total = float(tx_row["income_total"])
         expense_total = float(tx_row["expense_total"])
         balance = income_total - expense_total
+        pending_bills_count = int(bills_row["pending_bills_count"])
+        overdue_bills_count = int(bills_row["overdue_bills_count"])
+        open_bills_count = pending_bills_count + overdue_bills_count
+        open_bills_amount = max(float(bills_row["open_bills_amount"]), 0.0)
 
         return [
-            {"metric": "Fecha de generación", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+            {"metric": "Fecha de generación", "value": datetime.now().strftime("%d/%m/%Y %H:%M:%S")},
             {"metric": "Total de transacciones", "value": int(tx_row["transactions_count"])},
             {"metric": "Ingresos acumulados", "value": round(income_total, 2)},
             {"metric": "Gastos acumulados", "value": round(expense_total, 2)},
@@ -279,10 +559,15 @@ class ExportsApi(DomainApi):
             {"metric": "Créditos", "value": int(credits_row["credits_count"])},
             {"metric": "Categorías", "value": int(categories_row["categories_count"])},
             {"metric": "Notas", "value": int(notes_row["notes_count"])},
+            {"metric": "Facturas", "value": int(bills_row["bills_count"])} ,
+            {"metric": "Facturas abiertas", "value": open_bills_count},
+            {"metric": "Facturas vencidas", "value": overdue_bills_count},
+            {"metric": "Facturas pagadas", "value": int(bills_row["paid_bills_count"])},
+            {"metric": "Saldo facturas pendientes", "value": round(open_bills_amount, 2)},
             {
                 "metric": "Mayor categoría de gasto",
                 "value": (
-                    f"{top_expense['category_name']} ({float(top_expense['total']):.2f})"
+                    f"{top_expense['category_name']} ({self._format_local_amount(top_expense['total'])})"
                     if top_expense is not None
                     else "Sin datos"
                 ),
@@ -293,24 +578,32 @@ class ExportsApi(DomainApi):
         self,
         section: str,
         user_id: int,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        from_date: Optional[str] = None,
     ) -> tuple[list[str], list[list[object]]]:
         if section == "transactions":
-            transactions = self._fetch_transactions(user_id)
+            transactions = self._fetch_transactions(
+                user_id,
+                year=year,
+                month=month,
+                from_date=from_date,
+            )
             headers = [
-                "id",
-                "date",
-                "type",
-                "amount",
-                "category_name",
-                "description",
-                "credit_id",
+                "ID",
+                "Fecha",
+                "Tipo",
+                "Monto",
+                "Categoría",
+                "Descripción",
+                "ID Crédito",
             ]
             rows = [
                 [
                     tx["id"],
-                    tx["date"],
-                    tx["type"],
-                    tx["amount"],
+                    self._format_local_date(tx["date"]),
+                    self._label_transaction_type(tx["type"]),
+                    self._format_local_amount(tx["amount"]),
                     tx["category_name"],
                     tx["description"],
                     tx["credit_id"] if tx["credit_id"] is not None else "",
@@ -322,26 +615,26 @@ class ExportsApi(DomainApi):
         if section == "credits":
             credits = self._fetch_credits(user_id)
             headers = [
-                "id",
-                "description",
-                "total_amount",
-                "installments",
-                "installment_amount",
-                "paid_installments",
-                "pending_installments",
-                "start_date",
-                "category_name",
+                "ID",
+                "Descripción",
+                "Monto Total",
+                "Cuotas",
+                "Monto por Cuota",
+                "Cuotas Pagadas",
+                "Cuotas Pendientes",
+                "Fecha Inicio",
+                "Categoría",
             ]
             rows = [
                 [
                     credit["id"],
                     credit["description"],
-                    credit["total_amount"],
-                    credit["installments"],
-                    credit["installment_amount"],
-                    credit["paid_installments"],
-                    credit["pending_installments"],
-                    credit["start_date"],
+                    self._format_local_amount(credit["total_amount"]),
+                    self._format_local_integer(credit["installments"]),
+                    self._format_local_amount(credit["installment_amount"]),
+                    self._format_local_integer(credit["paid_installments"]),
+                    self._format_local_integer(credit["pending_installments"]),
+                    self._format_local_date(credit["start_date"]),
                     credit["category_name"],
                 ]
                 for credit in credits
@@ -351,21 +644,21 @@ class ExportsApi(DomainApi):
         if section == "categories":
             categories = self._fetch_categories(user_id)
             headers = [
-                "id",
-                "name",
-                "type",
-                "color",
-                "transactions_count",
-                "total_amount",
+                "ID",
+                "Nombre",
+                "Tipo",
+                "Color",
+                "Cantidad de Transacciones",
+                "Monto Total",
             ]
             rows = [
                 [
                     category["id"],
                     category["name"],
-                    category["type"],
+                    self._label_category_type(category["type"]),
                     category["color"],
-                    category["transactions_count"],
-                    category["total_amount"],
+                    self._format_local_integer(category["transactions_count"]),
+                    self._format_local_amount(category["total_amount"]),
                 ]
                 for category in categories
             ]
@@ -373,32 +666,120 @@ class ExportsApi(DomainApi):
 
         if section == "notes":
             notes = self._fetch_notes(user_id)
-            headers = ["id", "title", "content", "created_at", "updated_at"]
+            headers = ["ID", "Título", "Contenido", "Creada", "Actualizada"]
             rows = [
                 [
                     note["id"],
                     note["title"],
                     note["content"],
-                    note["created_at"],
-                    note["updated_at"],
+                    self._format_local_datetime(note["created_at"]),
+                    self._format_local_datetime(note["updated_at"]),
                 ]
                 for note in notes
             ]
             return headers, rows
 
+        if section == "bills":
+            bills = self._fetch_bills(user_id)
+            headers = [
+                "Nombre",
+                "Monto total",
+                "Abonado",
+                "Restante",
+                "Vencimiento",
+                "Estado",
+                "Categoría",
+                "Pagada en",
+                "Notas",
+            ]
+            rows = [
+                [
+                    bill["name"],
+                    self._format_local_amount(bill["amount"]),
+                    self._format_local_amount(bill["paid_amount"]),
+                    self._format_local_amount(bill["remaining_amount"]),
+                    self._format_local_date(bill["due_date"]),
+                    self._label_bill_status(bill["status"]),
+                    bill["category_name"],
+                    self._format_local_datetime(bill["paid_at"]),
+                    bill["notes"],
+                ]
+                for bill in bills
+            ]
+            return headers, rows
+
         summary = self._fetch_summary(user_id)
-        headers = ["metric", "value"]
-        rows = [[item["metric"], item["value"]] for item in summary]
+        headers = ["Métrica", "Valor"]
+        rows: list[list[object]] = []
+        for item in summary:
+            metric = str(item["metric"])
+            value = item["value"]
+
+            if metric in {
+                "Total de transacciones",
+                "Créditos",
+                "Categorías",
+                "Notas",
+                "Facturas",
+                "Facturas abiertas",
+                "Facturas vencidas",
+                "Facturas pagadas",
+            }:
+                value = self._format_local_integer(value)
+            elif metric in {
+                "Ingresos acumulados",
+                "Gastos acumulados",
+                "Balance",
+                "Saldo facturas pendientes",
+            }:
+                value = self._format_local_amount(value)
+            elif metric == "Fecha de generación":
+                value = self._format_local_datetime(value)
+
+            rows.append([metric, value])
         return headers, rows
 
-    def _write_csv(self, file_path: Path, headers: list[str], rows: list[list[object]]) -> None:
-        buffer = StringIO()
-        writer = csv.writer(buffer)
-        writer.writerow(headers)
-        writer.writerows(rows)
+    def _write_excel(self, file_path: Path, headers: list[str], rows: list[list[object]]) -> None:
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+            from openpyxl.utils import get_column_letter
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "No se pudo generar Excel porque falta la dependencia 'openpyxl'"
+            ) from exc
 
-        with file_path.open("w", encoding="utf-8-sig", newline="") as csv_file:
-            csv_file.write(buffer.getvalue())
+        workbook = Workbook()
+        sheet = workbook.active
+        if sheet is None:
+            raise RuntimeError("No se pudo crear la hoja del archivo Excel")
+        sheet.title = "Exportacion"
+
+        sheet.append(headers)
+        for row in rows:
+            sheet.append(["" if value is None else value for value in row])
+
+        header_fill = PatternFill(fill_type="solid", start_color="3E2C8E", end_color="3E2C8E")
+        header_font = Font(color="FFFFFF", bold=True)
+
+        for col_index, header in enumerate(headers, start=1):
+            header_cell = sheet.cell(row=1, column=col_index)
+            header_cell.fill = header_fill
+            header_cell.font = header_font
+            header_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+            max_len = len(str(header))
+            for row_index in range(2, len(rows) + 2):
+                value = sheet.cell(row=row_index, column=col_index).value
+                if value is None:
+                    continue
+                max_len = max(max_len, len(str(value)))
+
+            col_letter = get_column_letter(col_index)
+            sheet.column_dimensions[col_letter].width = min(max(max_len + 2, 10), 60)
+
+        sheet.freeze_panes = "A2"
+        workbook.save(file_path)
 
     def _get_pdf_column_widths(
         self,
@@ -410,6 +791,7 @@ class ExportsApi(DomainApi):
             "summary": [0.35, 0.65],
             "transactions": [0.07, 0.12, 0.09, 0.1, 0.16, 0.36, 0.1],
             "credits": [0.05, 0.22, 0.1, 0.08, 0.1, 0.1, 0.1, 0.11, 0.14],
+            "bills": [0.14, 0.11, 0.11, 0.11, 0.1, 0.1, 0.12, 0.09, 0.12],
             "categories": [0.08, 0.27, 0.12, 0.12, 0.19, 0.22],
             "notes": [0.06, 0.24, 0.46, 0.12, 0.12],
         }
@@ -439,7 +821,7 @@ class ExportsApi(DomainApi):
             ) from exc
 
         section_name = EXPORT_SECTION_LABELS.get(section, section)
-        is_wide_section = section in {"transactions", "credits", "notes"}
+        is_wide_section = section in {"transactions", "credits", "notes", "bills"}
         page_size = landscape(A4) if is_wide_section else A4
 
         left_margin = right_margin = 12 * mm
@@ -537,9 +919,9 @@ class ExportsApi(DomainApi):
         )
 
         story = [
-            Paragraph(f"Bolsi - Exportacion {section_name}", title_style),
+            Paragraph(f"Bolsi - Exportación {section_name}", title_style),
             Paragraph(
-                f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Registros: {len(rows)}",
+                f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} · Registros: {len(rows)}",
                 meta_style,
             ),
             Spacer(1, 8),
@@ -559,6 +941,10 @@ class ExportsApi(DomainApi):
         active_credits: int,
         pending_installments: int,
         monthly_due_amount: float,
+        bills_count: int,
+        overdue_bills_count: int,
+        due_soon_bills_count: int,
+        month_bills_amount: float,
         categories_count: int,
     ) -> None:
         try:
@@ -622,6 +1008,10 @@ class ExportsApi(DomainApi):
                 ["Créditos activos", str(active_credits)],
                 ["Cuotas pendientes", str(pending_installments)],
                 ["Cuotas a pagar este mes", f"{monthly_due_amount:.2f}"],
+                ["Facturas del mes", str(bills_count)],
+                ["Facturas vencidas", str(overdue_bills_count)],
+                ["Facturas por vencer", str(due_soon_bills_count)],
+                ["Monto facturas del mes", f"{month_bills_amount:.2f}"],
                 ["Categorías creadas", str(categories_count)],
             ],
             colWidths=[doc.width * 0.45, doc.width * 0.55],
@@ -721,6 +1111,10 @@ class ExportsApi(DomainApi):
         active_credits: int,
         pending_installments: int,
         monthly_due_amount: float,
+        bills_count: int,
+        overdue_bills_count: int,
+        due_soon_bills_count: int,
+        month_bills_amount: float,
         categories_count: int,
     ) -> JsonDict:
         user_error = self._validate_user(user_id)
@@ -744,6 +1138,10 @@ class ExportsApi(DomainApi):
                 int(active_credits),
                 int(pending_installments),
                 float(monthly_due_amount),
+                int(bills_count),
+                int(overdue_bills_count),
+                int(due_soon_bills_count),
+                float(month_bills_amount),
                 int(categories_count),
             )
 
@@ -769,11 +1167,41 @@ class ExportsApi(DomainApi):
             logger.error("Unexpected error exporting dashboard visual PDF: %s", exc)
             return self._error("Error interno al generar exportación")
 
+    def open_export_folder(self, user_id: int) -> JsonDict:
+        user_error = self._validate_user(user_id)
+        if user_error:
+            return user_error
+
+        export_dir = self._get_export_dir(user_id).resolve()
+        export_dir_str = str(export_dir)
+
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(export_dir_str)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", export_dir_str])
+            else:
+                subprocess.Popen(["xdg-open", export_dir_str])
+
+            return self._success(
+                "Carpeta de exportaciones abierta",
+                data={"folder_path": export_dir_str},
+            )
+        except OSError as exc:
+            logger.error("Error opening exports folder '%s': %s", export_dir, exc)
+            return self._error("No se pudo abrir la carpeta de exportaciones")
+        except Exception as exc:
+            logger.error("Unexpected error opening exports folder '%s': %s", export_dir, exc)
+            return self._error("Error interno al abrir la carpeta de exportaciones")
+
     def generate_export(
         self,
         user_id: int,
         section: str = "summary",
-        export_format: str = "csv",
+        export_format: str = "xlsx",
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        from_date: Optional[str] = None,
     ) -> JsonDict:
         user_error = self._validate_user(user_id)
         if user_error:
@@ -789,16 +1217,57 @@ class ExportsApi(DomainApi):
         if validation_error:
             return validation_error
 
+        if normalized_section == "transactions":
+            if from_date is not None:
+                if year is not None or month is not None:
+                    return self._error("Usa from_date o year/month para transacciones, no ambos")
+
+                normalized_from_date = from_date.strip()
+                if not normalized_from_date:
+                    return self._error("from_date no puede estar vacío")
+
+                try:
+                    date.fromisoformat(normalized_from_date)
+                except ValueError:
+                    return self._error("from_date debe tener formato YYYY-MM-DD")
+
+                from_date = normalized_from_date
+
+            has_year = year is not None
+            has_month = month is not None
+            if has_year != has_month:
+                return self._error("Para exportar transacciones filtradas debes indicar year y month")
+
+            if has_year and has_month:
+                if year < 1900 or year > 9999:
+                    return self._error("El year es inválido")
+                if month < 1 or month > 12:
+                    return self._error("El month debe estar entre 1 y 12")
+
         try:
-            headers, rows = self._build_headers_and_rows(normalized_section, user_id)
+            headers, rows = self._build_headers_and_rows(
+                normalized_section,
+                user_id,
+                year=year,
+                month=month,
+                from_date=from_date,
+            )
+            if normalized_section == "bills":
+                headers, rows = self._normalize_bills_export_table(headers, rows)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             extension = normalized_format
-            file_name = f"bolsi_{normalized_section}_{timestamp}.{extension}"
+            period_suffix = ""
+            if normalized_section == "transactions":
+                if from_date is not None:
+                    period_suffix = f"_from_{from_date.replace('-', '')}"
+                elif year is not None and month is not None:
+                    period_suffix = f"_{year}_{month:02d}"
+            file_name = f"bolsi_{normalized_section}{period_suffix}_{timestamp}.{extension}"
             export_dir = self._get_export_dir(user_id)
             file_path = export_dir / file_name
 
-            if normalized_format == "csv":
-                self._write_csv(file_path, headers, rows)
+            if normalized_format == "xlsx":
+                self._write_excel(file_path, headers, rows)
             else:
                 self._write_pdf(file_path, normalized_section, headers, rows)
 

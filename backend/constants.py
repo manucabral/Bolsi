@@ -9,12 +9,15 @@ from dataclasses import dataclass
 
 SESSION_DURATION_SECONDS = 5 * 24 * 60 * 60
 
-EXPORT_ALLOWED_FORMATS = frozenset({"csv", "pdf"})
+DEVELOPMENT_MODE = False
+
+EXPORT_ALLOWED_FORMATS = frozenset({"xlsx", "pdf"})
 EXPORT_ALLOWED_SECTIONS = frozenset(
     {
         "summary",
         "transactions",
         "credits",
+        "bills",
         "categories",
         "notes",
     }
@@ -23,6 +26,7 @@ EXPORT_SECTION_LABELS = {
     "summary": "Resumen",
     "transactions": "Transacciones",
     "credits": "Creditos",
+    "bills": "Facturas",
     "categories": "Categorias",
     "notes": "Notas",
 }
@@ -44,7 +48,7 @@ class Config:
     frontend_dist_dir: Path
     logs_default_name: str = "bolsi"
     dev_server_url: str = "http://localhost:5173"
-    development_mode: bool = True
+    development_mode: bool = DEVELOPMENT_MODE
     app_name: str = "Bolsi"
     app_version: str = "0.0.1"
     window_width: int = 1000
@@ -144,11 +148,8 @@ def _get_dev_db_path() -> Path:
 
 
 def _is_development_mode() -> bool:
-    """Read development mode from env var, defaulting to False."""
-    raw = os.getenv("BOLSI_DEVELOPMENT_MODE")
-    if raw is None:
-        return False
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    """Return current development mode from module constants."""
+    return DEVELOPMENT_MODE
 
 
 config = Config(

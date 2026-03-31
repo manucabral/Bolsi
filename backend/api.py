@@ -7,10 +7,13 @@ from typing import Optional
 
 from .helpers.api_response import ApiResponse, JsonDict
 from .domains import (
+    BillsApi,
     CategoriesApi,
     CreditsApi,
     ExportsApi,
     NotesApi,
+    NotificationsApi,
+    SavingsApi,
     TransactionsApi,
     UsersApi,
 )
@@ -27,10 +30,13 @@ class BolsiApi:
 
         self.conn = conn
         self.users = UsersApi(conn)
+        self.bills = BillsApi(conn)
         self.categories = CategoriesApi(conn)
         self.credits = CreditsApi(conn)
         self.exports = ExportsApi(conn)
         self.notes = NotesApi(conn)
+        self.notifications = NotificationsApi(conn)
+        self.savings = SavingsApi(conn)
         self.transactions = TransactionsApi(conn)
 
         logger.debug("Initialized API facade with domain modules")
@@ -183,6 +189,30 @@ class BolsiApi:
             if source_conn is not None:
                 source_conn.close()
 
+    def settings_get_notifications(self, user_id: int) -> JsonDict:
+        return self.notifications.get_preferences(user_id)
+
+    def settings_update_notifications(
+        self,
+        user_id: int,
+        bills_enabled: bool,
+        bills_days_before: int,
+        credits_enabled: bool,
+        credits_days_before: int,
+        summary_on_open_enabled: bool,
+    ) -> JsonDict:
+        return self.notifications.update_preferences(
+            user_id,
+            bills_enabled,
+            bills_days_before,
+            credits_enabled,
+            credits_days_before,
+            summary_on_open_enabled,
+        )
+
+    def settings_run_startup_alerts(self, user_id: int) -> JsonDict:
+        return self.notifications.run_startup_alerts(user_id)
+
     # ── Categories domain ─────────────────────────────────────────────────
 
     def categories_list(self, user_id: int) -> JsonDict:
@@ -264,6 +294,72 @@ class BolsiApi:
     def credits_delete(self, user_id: int, credit_id: int) -> JsonDict:
         return self.credits.delete_credit(user_id, credit_id)
 
+    # ── Bills domain ──────────────────────────────────────────────────────
+
+    def bills_list(self, user_id: int) -> JsonDict:
+        return self.bills.list_bills(user_id)
+
+    def bills_list_month(
+        self,
+        user_id: int,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+    ) -> JsonDict:
+        return self.bills.list_month_bills(user_id, year, month)
+
+    def bills_create(
+        self,
+        user_id: int,
+        name: str,
+        amount: float,
+        due_date: str,
+        category_id: Optional[int] = None,
+        notes: str = "",
+    ) -> JsonDict:
+        return self.bills.create_bill(
+            user_id,
+            name,
+            amount,
+            due_date,
+            category_id,
+            notes,
+        )
+
+    def bills_update(
+        self,
+        user_id: int,
+        bill_id: int,
+        name: str,
+        amount: float,
+        due_date: str,
+        category_id: Optional[int] = None,
+        notes: str = "",
+    ) -> JsonDict:
+        return self.bills.update_bill(
+            user_id,
+            bill_id,
+            name,
+            amount,
+            due_date,
+            category_id,
+            notes,
+        )
+
+    def bills_mark_paid(
+        self,
+        user_id: int,
+        bill_id: int,
+        paid_date: Optional[str] = None,
+        paid_amount: Optional[float] = None,
+    ) -> JsonDict:
+        return self.bills.mark_bill_paid(user_id, bill_id, paid_date, paid_amount)
+
+    def bills_mark_unpaid(self, user_id: int, bill_id: int) -> JsonDict:
+        return self.bills.mark_bill_unpaid(user_id, bill_id)
+
+    def bills_delete(self, user_id: int, bill_id: int) -> JsonDict:
+        return self.bills.delete_bill(user_id, bill_id)
+
     # ── Notes domain ──────────────────────────────────────────────────────
 
     def notes_list(self, user_id: int) -> JsonDict:
@@ -277,6 +373,50 @@ class BolsiApi:
 
     def notes_delete(self, user_id: int, note_id: int) -> JsonDict:
         return self.notes.delete_note(user_id, note_id)
+
+    # ── Savings goals domain ──────────────────────────────────────────────
+
+    def savings_list_goals(self, user_id: int) -> JsonDict:
+        return self.savings.list_goals(user_id)
+
+    def savings_create_goal(
+        self,
+        user_id: int,
+        name: str,
+        target: float,
+        deadline: Optional[str] = None,
+        color: Optional[str] = None,
+        affects_balance: bool = True,
+    ) -> JsonDict:
+        return self.savings.create_goal(
+            user_id,
+            name,
+            target,
+            deadline,
+            color,
+            affects_balance,
+        )
+
+    def savings_add_entry(
+        self,
+        user_id: int,
+        goal_id: int,
+        amount: float,
+        note: str = "",
+        entry_date: Optional[str] = None,
+    ) -> JsonDict:
+        return self.savings.add_entry(user_id, goal_id, amount, note, entry_date)
+
+    def savings_update_goal_target(
+        self,
+        user_id: int,
+        goal_id: int,
+        target: float,
+    ) -> JsonDict:
+        return self.savings.update_goal_target(user_id, goal_id, target)
+
+    def savings_delete_goal(self, user_id: int, goal_id: int) -> JsonDict:
+        return self.savings.delete_goal(user_id, goal_id)
 
     # ── Transactions domain ───────────────────────────────────────────────
 
@@ -334,15 +474,56 @@ class BolsiApi:
         self,
         user_id: int,
         section: str = "summary",
-        export_format: str = "csv",
+        export_format: str = "xlsx",
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        from_date: Optional[str] = None,
     ) -> JsonDict:
-        return self.exports.generate_export(user_id, section, export_format)
+        return self.exports.generate_export(
+            user_id,
+            section,
+            export_format,
+            year,
+            month,
+            from_date,
+        )
 
-    def exports_csv(self, user_id: int, section: str = "summary") -> JsonDict:
-        return self.exports.generate_export(user_id, section, "csv")
+    def exports_excel(
+        self,
+        user_id: int,
+        section: str = "summary",
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        from_date: Optional[str] = None,
+    ) -> JsonDict:
+        return self.exports.generate_export(
+            user_id,
+            section,
+            "xlsx",
+            year,
+            month,
+            from_date,
+        )
 
-    def exports_pdf(self, user_id: int, section: str = "summary") -> JsonDict:
-        return self.exports.generate_export(user_id, section, "pdf")
+    def exports_pdf(
+        self,
+        user_id: int,
+        section: str = "summary",
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        from_date: Optional[str] = None,
+    ) -> JsonDict:
+        return self.exports.generate_export(
+            user_id,
+            section,
+            "pdf",
+            year,
+            month,
+            from_date,
+        )
+
+    def exports_open_folder(self, user_id: int) -> JsonDict:
+        return self.exports.open_export_folder(user_id)
 
     def exports_dashboard_chart_png(
         self,
@@ -363,6 +544,10 @@ class BolsiApi:
         active_credits: int,
         pending_installments: int,
         monthly_due_amount: float,
+        bills_count: int,
+        overdue_bills_count: int,
+        due_soon_bills_count: int,
+        month_bills_amount: float,
         categories_count: int,
     ) -> JsonDict:
         return self.exports.export_dashboard_visual_pdf(
@@ -376,5 +561,9 @@ class BolsiApi:
             active_credits,
             pending_installments,
             monthly_due_amount,
+            bills_count,
+            overdue_bills_count,
+            due_soon_bills_count,
+            month_bills_amount,
             categories_count,
         )

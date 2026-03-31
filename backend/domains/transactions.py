@@ -14,6 +14,12 @@ ALLOWED_TRANSACTION_TYPES = {"income", "expense"}
 class TransactionsApi(DomainApi):
     """Handles transactions-related operations."""
 
+    def _normalize_description(self, description: str) -> str:
+        normalized = description.strip()
+        if not normalized:
+            return normalized
+        return normalized[0].upper() + normalized[1:]
+
     def _validate_user(self, user_id: int) -> JsonDict | None:
         if user_id <= 0:
             return self._error("El user_id debe ser mayor a 0")
@@ -197,7 +203,7 @@ class TransactionsApi(DomainApi):
         if credit_error:
             return credit_error
 
-        normalized_description = description.strip()
+        normalized_description = self._normalize_description(description)
 
         try:
             cur = self.conn.cursor()
@@ -302,7 +308,7 @@ class TransactionsApi(DomainApi):
         if credit_error:
             return credit_error
 
-        normalized_description = description.strip()
+        normalized_description = self._normalize_description(description)
 
         try:
             cur = self.conn.cursor()
